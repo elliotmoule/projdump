@@ -2,6 +2,7 @@
 
 class Program
 {
+    #region Exclusions
     static readonly HashSet<string> ExcludedFileNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "AssemblyInfo.cs",
@@ -20,8 +21,22 @@ class Program
         $"{Path.DirectorySeparatorChar}node_modules{Path.DirectorySeparatorChar}",
     ];
 
+    // Files whose names end with these suffixes are likely auto-generated
     static readonly string[] ExcludedFileSuffixes = [".designer.cs", ".g.cs", ".g.i.cs", ".min.js", ".min.css"];
 
+    // Folder name segments that indicate a test project
+    static readonly string[] TestPathSegments =
+    [
+        $"{Path.DirectorySeparatorChar}Tests{Path.DirectorySeparatorChar}",
+        $"{Path.DirectorySeparatorChar}Test{Path.DirectorySeparatorChar}",
+        $"{Path.DirectorySeparatorChar}Specs{Path.DirectorySeparatorChar}",
+        $"{Path.DirectorySeparatorChar}UnitTests{Path.DirectorySeparatorChar}",
+        $"{Path.DirectorySeparatorChar}IntegrationTests{Path.DirectorySeparatorChar}",
+    ];
+    #endregion
+
+    #region Config files
+    // Config files to capture
     static readonly HashSet<string> ConfigFileNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "appsettings.json",
@@ -37,14 +52,15 @@ class Program
         "docker-compose.yml",
         "docker-compose.yaml",
     };
+    #endregion
 
+    // Code file ordering — lower index = higher priority (appears earlier)
     static readonly string[] EntryPointNames = ["Program.cs", "Startup.cs", "App.xaml.cs"];
 
-    // This provides the priority for what files should be higher in the doc.
     static int CodeFilePriority(FileInfo f)
     {
         if (EntryPointNames.Contains(f.Name, StringComparer.OrdinalIgnoreCase)) return 0;
-        if (f.Name.StartsWith('I') && char.IsUpper(f.Name.Length > 1 ? f.Name[1] : ' ')) return 1; // interfaces
+        if (f.Name.StartsWith('I') && char.IsUpper(f.Name.Length > 1 ? f.Name[1] : ' ')) return 1; // IFoo interfaces
         if (f.Name.EndsWith("Interface.cs", StringComparison.OrdinalIgnoreCase)) return 1;
         if (f.Name.EndsWith("Model.cs", StringComparison.OrdinalIgnoreCase)) return 2;
         if (f.Name.EndsWith("Models.cs", StringComparison.OrdinalIgnoreCase)) return 2;
@@ -60,19 +76,114 @@ class Program
         return 5; // everything else
     }
 
+    #region Helpers
+    static bool IsTestFile(FileInfo f) =>
+    TestPathSegments.Any(seg => f.FullName.Contains(seg)) ||
+    f.Name.EndsWith("Tests.cs", StringComparison.OrdinalIgnoreCase) ||
+    f.Name.EndsWith("Test.cs", StringComparison.OrdinalIgnoreCase) ||
+    f.Name.EndsWith("Spec.cs", StringComparison.OrdinalIgnoreCase) ||
+    f.Name.EndsWith("Specs.cs", StringComparison.OrdinalIgnoreCase) ||
+    (f.Extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase) && (
+        f.Name.Contains("Test", StringComparison.OrdinalIgnoreCase) ||
+        f.Name.Contains("Spec", StringComparison.OrdinalIgnoreCase)
+    ));
+
+    static string FormatFileSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        _ => $"{bytes / (1024.0 * 1024):F1} MB",
+    };
+
+    static string GetMarkdownLanguage(string extension) => extension.ToLower() switch
+    {
+        ".cs" => "csharp",
+        ".xaml" or ".csproj" or ".slnx" => "xml",
+        ".xml" or ".config" or ".app" => "xml",
+        ".cshtml" => "razor",
+        ".css" => "css",
+        ".js" => "javascript",
+        ".ts" => "typescript",
+        ".json" => "json",
+        ".yml" or ".yaml" => "yaml",
+        _ => "text"
+    };
+
+    static void PrintUsage()
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("Usage: projdump <path-to-solution-or-project> [output-path] [options]");
+        Console.WriteLine();
+        Console.WriteLine("Supported input formats: .sln, .slnx, .csproj");
+        Console.WriteLine();
+        Console.WriteLine("Options:");
+        Console.WriteLine("  --slim             Omit file contents; list filenames and sizes only");
+        Console.WriteLine("  --exclude-tests    Exclude test projects and test files");
+        Console.WriteLine("  --scope <dir>      Restrict to a subdirectory (relative to solution/project root)");
+        Console.WriteLine("  --help, -h         Show this help");
+        Console.WriteLine();
+        Console.WriteLine("Examples:");
+        Console.WriteLine("  projdump MyApp.sln");
+        Console.WriteLine("  projdump MyApp.sln output/context.md --slim");
+        Console.WriteLine("  projdump MyApp.sln --exclude-tests --scope src/MyApp.Api");
+        Console.ResetColor();
+    }
+    #endregion
+
     static void Main(string[] args)
     {
         if (args.Length == 0)
         {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("Usage: projdump <path-to-solution-or-project> [output-path]");
-            Console.WriteLine("Supported formats: .sln, .slnx, .csproj");
-            Console.ResetColor();
+            PrintUsage();
             return;
         }
 
-        string inputPath = args[0];
-        string? customOutputPath = args.Length > 1 ? args[1] : null;
+        // Positional: first non-flag arg = input path, second = output path
+        // Flags: --slim, --exclude-tests, --scope <relative-dir>
+        bool slim = false;
+        bool excludeTests = false;
+        string? scopeDir = null;
+
+        var positional = new List<string>();
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--slim":
+                    slim = true;
+                    break;
+                case "--exclude-tests":
+                    excludeTests = true;
+                    break;
+                case "--scope":
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("Error: --scope requires a directory argument.");
+                        Console.ResetColor();
+                        return;
+                    }
+                    scopeDir = args[++i];
+                    break;
+                case "--help":
+                case "-h":
+                    PrintUsage();
+                    return;
+                default:
+                    positional.Add(args[i]);
+                    break;
+            }
+        }
+
+        if (positional.Count == 0)
+        {
+            PrintUsage();
+            return;
+        }
+
+        string inputPath = positional[0];
+        string? customOutputPath = positional.Count > 1 ? positional[1] : null;
         string extension = Path.GetExtension(inputPath).ToLower();
         bool isValidExtension = extension == ".sln" || extension == ".slnx" || extension == ".csproj";
 
@@ -88,8 +199,23 @@ class Program
         DirectoryInfo rootDir = inputFileInfo.Directory!;
         if (rootDir == null) return;
 
+        // Apply --scope: restrict file discovery to a subdirectory
+        if (scopeDir != null)
+        {
+            string scopedPath = Path.GetFullPath(Path.Combine(rootDir.FullName, scopeDir));
+            if (!Directory.Exists(scopedPath))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"Error: --scope directory '{scopeDir}' does not exist under '{rootDir.FullName}'.");
+                Console.ResetColor();
+                return;
+            }
+            rootDir = new DirectoryInfo(scopedPath);
+        }
+
         bool isSolution = extension == ".sln" || extension == ".slnx";
-        string outputFileName = isSolution ? "app-solution.md" : "app-project.md";
+        string modeSuffix = slim ? "-slim" : "";
+        string outputFileName = isSolution ? $"app-solution{modeSuffix}.md" : $"app-project{modeSuffix}.md";
 
         // Resolve output path
         string outputPath;
@@ -112,18 +238,19 @@ class Program
             outputPath = Path.Combine(rootDir.FullName, outputFileName);
         }
 
-        // Get all the files.
+        // Gather all files
         var allFiles = rootDir.GetFiles("*.*", SearchOption.AllDirectories)
             .Where(f =>
                 !ExcludedPathSegments.Any(seg => f.FullName.Contains(seg)) &&
                 !ExcludedFileNames.Contains(f.Name) &&
-                !ExcludedFileSuffixes.Any(suffix => f.Name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                !ExcludedFileSuffixes.Any(suffix => f.Name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) &&
+                !(excludeTests && IsTestFile(f))
             )
             .OrderBy(f => f.DirectoryName)
             .ThenBy(f => f.Name)
             .ToList();
 
-        // Categorise
+        // Categorise files
         var codeExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs", ".xaml", ".cshtml", ".css", ".js", ".ts" };
         var configExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".json", ".xml", ".config", ".yml", ".yaml", ".env" };
 
@@ -147,17 +274,35 @@ class Program
             ? allFiles.Where(f => f.Extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase)).ToList()
             : [inputFileInfo];
 
-        // Build the md output
+        // Build md output
         StringBuilder sb = new();
 
         // Header
-        sb.AppendLine($"# {inputFileInfo.Name} - {(isSolution ? "App Solution" : "App Project")}");
+        string modeLabel = slim ? " (slim)" : "";
+        sb.AppendLine($"# {inputFileInfo.Name} - {(isSolution ? "App Solution" : "App Project")}{modeLabel}");
         sb.AppendLine();
 
-        // Token estimate placeholder (filled in at the end)
+        if (slim)
+        {
+            sb.AppendLine("> **Slim mode:** file contents are omitted. Each entry shows the file name, path, and size.");
+            sb.AppendLine();
+        }
+
+        // Token estimate placeholder — filled in at the end
         const string tokenPlaceholderLine = "%%TOKEN_ESTIMATE%%";
         sb.AppendLine(tokenPlaceholderLine);
         sb.AppendLine();
+
+        // Active flags note
+        var activeFlags = new List<string>();
+        if (slim) activeFlags.Add("`--slim`");
+        if (excludeTests) activeFlags.Add("`--exclude-tests`");
+        if (scopeDir != null) activeFlags.Add($"`--scope {scopeDir}`");
+        if (activeFlags.Count > 0)
+        {
+            sb.AppendLine($"> **Flags:** {string.Join(", ", activeFlags)}");
+            sb.AppendLine();
+        }
 
         // File Summary Table
         sb.AppendLine("## Project Summary");
@@ -190,7 +335,10 @@ class Program
                 sb.AppendLine($"### {file.Name}");
                 sb.AppendLine($"**Path:** `{relativePath}`");
                 sb.AppendLine();
-                sb.AppendLine(File.ReadAllText(file.FullName).Trim());
+                if (slim)
+                    sb.AppendLine($"_File size: {FormatFileSize(file.Length)}_");
+                else
+                    sb.AppendLine(File.ReadAllText(file.FullName).Trim());
                 sb.AppendLine();
             }
         }
@@ -201,9 +349,18 @@ class Program
             sb.AppendLine("## Solution Configuration");
             string slnLang = extension == ".slnx" ? "xml" : "text";
             sb.AppendLine($"### {inputFileInfo.Name}");
-            sb.AppendLine($"```{slnLang}");
-            sb.AppendLine(File.ReadAllText(inputPath).Trim());
-            sb.AppendLine("```");
+            sb.AppendLine($"**Path:** `{inputFileInfo.Name}`");
+            sb.AppendLine();
+            if (slim)
+            {
+                sb.AppendLine($"_File size: {FormatFileSize(inputFileInfo.Length)}_");
+            }
+            else
+            {
+                sb.AppendLine($"```{slnLang}");
+                sb.AppendLine(File.ReadAllText(inputPath).Trim());
+                sb.AppendLine("```");
+            }
             sb.AppendLine();
         }
 
@@ -211,10 +368,20 @@ class Program
         sb.AppendLine("## Project Dependencies");
         foreach (var proj in projFiles)
         {
+            string relativePath = Path.GetRelativePath(rootDir.FullName, proj.FullName);
             sb.AppendLine($"### {proj.Name}");
-            sb.AppendLine("```xml");
-            sb.AppendLine(File.ReadAllText(proj.FullName).Trim());
-            sb.AppendLine("```");
+            sb.AppendLine($"**Path:** `{relativePath}`");
+            sb.AppendLine();
+            if (slim)
+            {
+                sb.AppendLine($"_File size: {FormatFileSize(proj.Length)}_");
+            }
+            else
+            {
+                sb.AppendLine("```xml");
+                sb.AppendLine(File.ReadAllText(proj.FullName).Trim());
+                sb.AppendLine("```");
+            }
         }
         sb.AppendLine();
 
@@ -225,13 +392,20 @@ class Program
             foreach (var file in configFiles)
             {
                 string relativePath = Path.GetRelativePath(rootDir.FullName, file.FullName);
-                string lang = GetMarkdownLanguage(file.Extension);
                 sb.AppendLine($"### {file.Name}");
                 sb.AppendLine($"**Path:** `{relativePath}`");
                 sb.AppendLine();
-                sb.AppendLine($"```{lang}");
-                sb.AppendLine(File.ReadAllText(file.FullName).Trim());
-                sb.AppendLine("```");
+                if (slim)
+                {
+                    sb.AppendLine($"_File size: {FormatFileSize(file.Length)}_");
+                }
+                else
+                {
+                    string lang = GetMarkdownLanguage(file.Extension);
+                    sb.AppendLine($"```{lang}");
+                    sb.AppendLine(File.ReadAllText(file.FullName).Trim());
+                    sb.AppendLine("```");
+                }
                 sb.AppendLine();
             }
         }
@@ -242,17 +416,24 @@ class Program
         foreach (var file in codeFiles)
         {
             string relativePath = Path.GetRelativePath(rootDir.FullName, file.FullName);
-            string lang = GetMarkdownLanguage(file.Extension);
             sb.AppendLine($"### {file.Name}");
             sb.AppendLine($"**Path:** `{relativePath}`");
             sb.AppendLine();
-            sb.AppendLine($"```{lang}");
-            sb.AppendLine(File.ReadAllText(file.FullName).Trim());
-            sb.AppendLine("```");
+            if (slim)
+            {
+                sb.AppendLine($"_File size: {FormatFileSize(file.Length)}_");
+            }
+            else
+            {
+                string lang = GetMarkdownLanguage(file.Extension);
+                sb.AppendLine($"```{lang}");
+                sb.AppendLine(File.ReadAllText(file.FullName).Trim());
+                sb.AppendLine("```");
+            }
             sb.AppendLine();
         }
 
-        // Token estimate (rough heuristic: GPT/Claude tokenisers average ~4 chars per token for code)
+        // Token estimate (Rough heuristic: GPT/Claude tokenisers average ~4 chars per token for code)
         string output = sb.ToString();
         int estimatedTokens = (int)Math.Ceiling(output.Length / 4.0);
         string tokenLine = $"> **Estimated tokens:** ~{estimatedTokens:N0}  _(character count ÷ 4 — treat as a rough guide)_";
@@ -262,22 +443,9 @@ class Program
 
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"Success! Context generated at: {outputPath}");
-        Console.WriteLine($"Estimated tokens: ~{estimatedTokens:N0}");
+        Console.Write($"Estimated tokens: ~{estimatedTokens:N0}");
+        if (slim) Console.Write("  (slim mode — run without --slim for full file contents)");
+        Console.WriteLine();
         Console.ResetColor();
     }
-
-    // Helper for translating file extensions
-    static string GetMarkdownLanguage(string extension) => extension.ToLower() switch
-    {
-        ".cs" => "csharp",
-        ".xaml" or ".csproj" or ".slnx" => "xml",
-        ".xml" or ".config" or ".app" => "xml",
-        ".cshtml" => "razor",
-        ".css" => "css",
-        ".js" => "javascript",
-        ".ts" => "typescript",
-        ".json" => "json",
-        ".yml" or ".yaml" => "yaml",
-        _ => "text"
-    };
 }
