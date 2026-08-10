@@ -21,5 +21,5 @@ public sealed class WebApiMode : IDumpMode
     }
 
     static List<FileEntry> Filter(IReadOnlyList<FileEntry> files) =>
-        files.Where(f => !ExcludedRoles.Contains(f.Role)).ToList();
+        [.. files.Where(f => !ExcludedRoles.Contains(f.Role))];
 }

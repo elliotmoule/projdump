@@ -35,9 +35,7 @@ public sealed class VueProjectAnalyzer : IProjectAnalyzer
             throw new ProjectAnalysisException($"'{packageJsonPath}' does not declare a 'vue' dependency. Pass --type vue to force this analyzer if that's expected.");
 
         FileInfo inputFileInfo = new(packageJsonPath);
-        DirectoryInfo? rootDir = inputFileInfo.Directory;
-        if (rootDir == null)
-            throw new ProjectAnalysisException($"Could not resolve a parent directory for '{packageJsonPath}'.");
+        DirectoryInfo? rootDir = inputFileInfo.Directory ?? throw new ProjectAnalysisException($"Could not resolve a parent directory for '{packageJsonPath}'.");
 
         // Computed before --scope reassigns rootDir, so scoping never affects the name.
         string projectName = ResolveProjectName(packageJsonPath, rootDir);

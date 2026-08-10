@@ -6,7 +6,7 @@ public sealed class ProjectTypeRegistry
 
     public ProjectTypeRegistry(IEnumerable<IProjectAnalyzer> analyzers)
     {
-        _analyzers = analyzers.ToList();
+        _analyzers = [.. analyzers];
     }
 
     public IProjectAnalyzer Resolve(string inputPath, string? requestedTypeKey)
@@ -22,13 +22,11 @@ public sealed class ProjectTypeRegistry
             return match;
         }
 
-        var detected = _analyzers.FirstOrDefault(a => a.CanHandle(inputPath));
-        if (detected == null)
-            throw new ProjectAnalysisException($"Could not detect a project type for '{inputPath}'. Specify one explicitly with --type.");
+        var detected = _analyzers.FirstOrDefault(a => a.CanHandle(inputPath)) ?? throw new ProjectAnalysisException($"Could not detect a project type for '{inputPath}'. Specify one explicitly with --type.");
         return detected;
     }
 
-    public void ValidateMode(IProjectAnalyzer analyzer, string modeKey)
+    public static void ValidateMode(IProjectAnalyzer analyzer, string modeKey)
     {
         if (!analyzer.SupportedModes.Contains(modeKey, StringComparer.OrdinalIgnoreCase))
         {

@@ -33,9 +33,7 @@ public sealed class CSharpAnalyzer : IProjectAnalyzer
             throw new ProjectAnalysisException($"'{inputPath}' is not a valid or existing .sln, .slnx, or .csproj file.");
 
         FileInfo inputFileInfo = new(inputPath);
-        DirectoryInfo? rootDir = inputFileInfo.Directory;
-        if (rootDir == null)
-            throw new ProjectAnalysisException($"Could not resolve a parent directory for '{inputPath}'.");
+        DirectoryInfo? rootDir = inputFileInfo.Directory ?? throw new ProjectAnalysisException($"Could not resolve a parent directory for '{inputPath}'.");
 
         // Apply --scope: restrict file discovery to a subdirectory
         if (options.ScopeDir != null)

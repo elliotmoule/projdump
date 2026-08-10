@@ -49,17 +49,15 @@ public class ProjectTypeRegistryTests
     public void ValidateMode_DoesNotThrow_WhenModeIsSupported()
     {
         var analyzer = new FakeProjectAnalyzer("csharp", _ => true, "default", "webapi");
-        var registry = new ProjectTypeRegistry([analyzer]);
 
-        Assert.DoesNotThrow(() => registry.ValidateMode(analyzer, "webapi"));
+        Assert.DoesNotThrow(() => ProjectTypeRegistry.ValidateMode(analyzer, "webapi"));
     }
 
     [Test]
     public void ValidateMode_Throws_WhenModeIsNotSupported()
     {
         var analyzer = new FakeProjectAnalyzer("vue", _ => true, "default");
-        var registry = new ProjectTypeRegistry([analyzer]);
 
-        Assert.Throws<ProjectAnalysisException>(() => registry.ValidateMode(analyzer, "webapi"));
+        Assert.Throws<ProjectAnalysisException>(() => ProjectTypeRegistry.ValidateMode(analyzer, "webapi"));
     }
 }

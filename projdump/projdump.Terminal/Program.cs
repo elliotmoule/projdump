@@ -162,7 +162,7 @@ class Program
         try
         {
             var analyzer = registry.Resolve(options.InputPath, options.TypeArg);
-            registry.ValidateMode(analyzer, modeKey);
+            ProjectTypeRegistry.ValidateMode(analyzer, modeKey);
 
             var analysisOptions = new ProjectAnalysisOptions { ExcludeTests = options.ExcludeTests, ScopeDir = options.ScopeDir };
             analysis = analyzer.Analyze(options.InputPath, analysisOptions);
@@ -214,11 +214,11 @@ class Program
             Slim = options.Slim,
             ExcludeTests = options.ExcludeTests,
             ScopeDir = options.ScopeDir,
-            AllFiles = analysis.AllFiles.Select(e => e.File).ToList(),
-            CodeFiles = analysis.CodeFiles.Select(e => e.File).ToList(),
-            ConfigFiles = analysis.ConfigFiles.Select(e => e.File).ToList(),
-            ReadmeFiles = analysis.ReadmeFiles.Select(e => e.File).ToList(),
-            ProjFiles = analysis.ProjFiles.Select(e => e.File).ToList(),
+            AllFiles = [.. analysis.AllFiles.Select(e => e.File)],
+            CodeFiles = [.. analysis.CodeFiles.Select(e => e.File)],
+            ConfigFiles = [.. analysis.ConfigFiles.Select(e => e.File)],
+            ReadmeFiles = [.. analysis.ReadmeFiles.Select(e => e.File)],
+            ProjFiles = [.. analysis.ProjFiles.Select(e => e.File)],
         };
 
         var (output, estimatedTokens) = MarkdownReportRenderer.Render(renderRequest);
@@ -236,7 +236,7 @@ class Program
     internal static string SanitizeForFileName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();
-        var sanitized = new string(name.Select(c => invalid.Contains(c) ? '-' : c).ToArray());
+        var sanitized = new string([.. name.Select(c => invalid.Contains(c) ? '-' : c)]);
         return string.IsNullOrWhiteSpace(sanitized) ? "project" : sanitized;
     }
 }
