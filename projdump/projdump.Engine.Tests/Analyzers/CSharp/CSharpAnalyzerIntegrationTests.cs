@@ -175,4 +175,58 @@ public class CSharpAnalyzerIntegrationTests
         Assert.Throws<ProjectAnalysisException>(() =>
             new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions { ScopeDir = "DoesNotExist" }));
     }
+
+    [Test]
+    public void Analyze_ExcludesMinifiedVendorAssets_UnderWwwroot()
+    {
+        // Regression coverage: .min.js/.min.css exclusion previously only
+        // applied to Vue projects, so vendored libraries under a C#
+        // project's wwwroot/lib were never dropped.
+        using var temp = new TempProjectDirectory();
+        string csprojPath = BuildBasicProject(temp);
+        temp.WriteFile(Path.Combine("wwwroot", "lib", "jquery.min.js"), "/* huge vendored file */");
+        temp.WriteFile(Path.Combine("wwwroot", "lib", "bootstrap.min.css"), "/* huge vendored file */");
+
+        var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+        var names = analysis.AllFiles.Select(f => f.File.Name).ToList();
+        Assert.That(names, Does.Not.Contain("jquery.min.js"));
+        Assert.That(names, Does.Not.Contain("bootstrap.min.css"));
+    }
+
+    [Test]
+    public void Analyze_TagsWwwrootImagesAndCssWithRolesWebApiModeCanFilter()
+    {
+        using var temp = new TempProjectDirectory();
+        string csprojPath = BuildBasicProject(temp);
+        temp.WriteFile(Path.Combine("wwwroot", "images", "logo.png"), "binary");
+        temp.WriteFile(Path.Combine("wwwroot", "site.css"), "body {}");
+        temp.WriteFile(Path.Combine("wwwroot", "js", "site.js"), "// hand-written, not vendored");
+
+        var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(analysis.AllFiles.Single(f => f.File.Name == "logo.png").Role, Is.EqualTo(FileRole.Asset));
+            Assert.That(analysis.AllFiles.Single(f => f.File.Name == "site.css").Role, Is.EqualTo(FileRole.Style));
+            // Hand-written JS gets Other, same as any other unclassified code - not dropped by role alone.
+            Assert.That(analysis.AllFiles.Single(f => f.File.Name == "site.js").Role, Is.EqualTo(FileRole.Other));
+        }
+    }
+
+    [Test]
+    public void Analyze_ExcludeDirs_DropsNamedDirectoryEntirely()
+    {
+        using var temp = new TempProjectDirectory();
+        string csprojPath = BuildBasicProject(temp);
+        temp.WriteFile(Path.Combine("wwwroot", "js", "site.js"), "// hand-written");
+        temp.WriteFile(Path.Combine("wwwroot", "images", "logo.png"), "binary");
+
+        var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions { ExcludeDirs = ["wwwroot"] });
+
+        var names = analysis.AllFiles.Select(f => f.File.Name).ToList();
+        Assert.That(names, Does.Not.Contain("site.js"));
+        Assert.That(names, Does.Not.Contain("logo.png"));
+        Assert.That(names, Does.Contain("Program.cs"));
+    }
 }

@@ -122,6 +122,44 @@ public class VueProjectAnalyzerIntegrationTests
     }
 
     [Test]
+    public void Analyze_ExcludesMinifiedAssets()
+    {
+        using var temp = new TempProjectDirectory();
+        BuildBasicProject(temp);
+        temp.WriteFile(Path.Combine("public", "vendor.min.js"), "/* vendored */");
+
+        var analysis = new VueProjectAnalyzer().Analyze(temp.RootPath, new ProjectAnalysisOptions());
+
+        Assert.That(analysis.AllFiles.Select(f => f.File.Name), Does.Not.Contain("vendor.min.js"));
+    }
+
+    [Test]
+    public void Analyze_TagsImagesWithAssetRole()
+    {
+        using var temp = new TempProjectDirectory();
+        BuildBasicProject(temp);
+        temp.WriteFile(Path.Combine("public", "logo.png"), "binary");
+
+        var analysis = new VueProjectAnalyzer().Analyze(temp.RootPath, new ProjectAnalysisOptions());
+
+        Assert.That(analysis.AllFiles.Single(f => f.File.Name == "logo.png").Role, Is.EqualTo(FileRole.Asset));
+    }
+
+    [Test]
+    public void Analyze_ExcludeDirs_DropsNamedDirectoryEntirely()
+    {
+        using var temp = new TempProjectDirectory();
+        BuildBasicProject(temp);
+        temp.WriteFile(Path.Combine("public", "logo.png"), "binary");
+
+        var analysis = new VueProjectAnalyzer().Analyze(temp.RootPath, new ProjectAnalysisOptions { ExcludeDirs = ["public"] });
+
+        var names = analysis.AllFiles.Select(f => f.File.Name).ToList();
+        Assert.That(names, Does.Not.Contain("logo.png"));
+        Assert.That(names, Does.Contain("main.js"));
+    }
+
+    [Test]
     public void Analyze_IsSolutionIsAlwaysFalse()
     {
         using var temp = new TempProjectDirectory();

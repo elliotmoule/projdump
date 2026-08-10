@@ -8,6 +8,7 @@ public sealed class VueProjectAnalyzer : IProjectAnalyzer
 {
     static readonly IFileExclusionFilter ExclusionFilter = new CompositeExclusionFilter(
         new VcsAndToolingExclusionFilter(),
+        new MinifiedAssetExclusionFilter(),
         new VueExclusionFilter());
 
     static readonly ITestFileDetector TestFileDetector = new CompositeTestFileDetector(
@@ -50,9 +51,13 @@ public sealed class VueProjectAnalyzer : IProjectAnalyzer
         }
 
         // Gather all files
+        IFileExclusionFilter effectiveExclusionFilter = options.ExcludeDirs.Count > 0
+            ? new CompositeExclusionFilter(ExclusionFilter, new UserDirExclusionFilter(options.ExcludeDirs))
+            : ExclusionFilter;
+
         var allFileInfos = rootDir.GetFiles("*.*", SearchOption.AllDirectories)
             .Where(f =>
-                !ExclusionFilter.IsExcluded(f) &&
+                !effectiveExclusionFilter.IsExcluded(f) &&
                 !(options.ExcludeTests && TestFileDetector.IsTestFile(f))
             )
             .OrderBy(f => f.DirectoryName)

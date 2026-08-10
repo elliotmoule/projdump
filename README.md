@@ -50,6 +50,7 @@ projdump
 | `--slim` | Omit file contents; list filenames and sizes only |
 | `--exclude-tests` | Exclude test projects and test files |
 | `--scope <dir>` | Restrict to a subdirectory, relative to the project root |
+| `--exclude-dir <name>` | Exclude a directory by name, anywhere in the tree (repeatable) |
 | `--type <csharp\|vue>` | Force project type (auto-detected by default) |
 | `--mode <default\|webapi>` | Report focus mode (`webapi` is C#-only for now) |
 | `--help`, `-h` | Show usage |
@@ -75,6 +76,11 @@ projdump MyApp.sln --exclude-tests --scope src/MyApp.Api
 
 # Focus the report on backend API surface (C# only)
 projdump MyApp.Api.csproj --mode webapi
+
+# --mode webapi already drops UI-only files (images, CSS) from wwwroot,
+# but keeps hand-written JS since it might genuinely call the API - this
+# drops wwwroot entirely instead, treating it as a separate UI concern
+projdump MyApp.Api.csproj --mode webapi --exclude-dir wwwroot
 ```
 
 The output filename is always `<project-name>-app-solution.md` or `<project-name>-app-project.md` (plus `-slim` if that flag is set) — the project name comes from the `.sln`/`.csproj` file name for C#, or the `name` field in `package.json` for Vue.
@@ -91,7 +97,7 @@ flowchart TD
     E --> F["Analyze: gather + classify files"]
     F --> G{"Mode"}
     G -- default --> H["Keep everything"]
-    G -- webapi --> I["Drop UI-only files\n(Component, Style)"]
+    G -- webapi --> I["Drop UI-only files\n(Component, Style, Asset)"]
     H --> J["Render markdown report"]
     I --> J
     J --> K["Write .md file"]
@@ -123,12 +129,14 @@ To keep the output clean and token-efficient, the following are always skipped:
 | Build output (Vue) | `dist/` |
 | Auto-generated code (C#) | `*.designer.cs`, `*.g.cs`, `*.g.i.cs` |
 | Boilerplate (C#) | `AssemblyInfo.cs`, `GlobalUsings.cs` |
-| Minified assets (Vue) | `*.min.js`, `*.min.css` |
+| Minified assets (any stack) | `*.min.js`, `*.min.css` |
 | EF Core migrations (C#) | `Migrations/` |
 | VCS / editor folders | `.git/`, `.vscode/`, `.vs/` |
 | Dependencies | `node_modules/`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml` |
 
 With `--exclude-tests`, these are also dropped: `Tests/`, `Test/`, `Specs/`, `UnitTests/`, `IntegrationTests/`, `__tests__/`, `e2e/` folders, plus `*Tests.cs`, `*Spec.cs`, `*.spec.ts`, `*.test.js` and similar naming conventions.
+
+With `--mode webapi`, files get one more layer of filtering on top of the above: anything tagged `Component`, `Style`, or `Asset` (XAML/Razor views, CSS, and images/fonts) is dropped, since it's UI concern rather than API surface. Hand-written JavaScript under something like `wwwroot/js` is deliberately *not* dropped by this — it might genuinely be relevant to how the API gets called, and there's no reliable way to tell "hand-written" from "vendored" by role alone. If you want the whole thing gone regardless, `--exclude-dir wwwroot` removes it entirely, no matter what's in it.
 
 ## Building
 

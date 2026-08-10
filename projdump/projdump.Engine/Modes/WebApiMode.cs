@@ -7,7 +7,7 @@ public sealed class WebApiMode : IDumpMode
 {
     public string ModeKey => "webapi";
 
-    static readonly HashSet<FileRole> ExcludedRoles = [FileRole.Component, FileRole.Style];
+    static readonly HashSet<FileRole> ExcludedRoles = [FileRole.Component, FileRole.Style, FileRole.Asset];
 
     public ProjectAnalysis Apply(ProjectAnalysis analysis)
     {

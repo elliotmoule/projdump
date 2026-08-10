@@ -13,7 +13,8 @@ class Program
         bool ExcludeTests,
         string? ScopeDir,
         string? TypeArg,
-        string? ModeArg);
+        string? ModeArg,
+        IReadOnlyList<string> ExcludeDirs);
 
     static void PrintUsage()
     {
@@ -29,6 +30,7 @@ class Program
         Console.WriteLine("  --slim             Omit file contents; list filenames and sizes only");
         Console.WriteLine("  --exclude-tests    Exclude test projects and test files");
         Console.WriteLine("  --scope <dir>      Restrict to a subdirectory (relative to project root)");
+        Console.WriteLine("  --exclude-dir <name>      Exclude a directory by name, anywhere in the tree (repeatable)");
         Console.WriteLine("  --type <csharp|vue>       Force project type (auto-detected by default)");
         Console.WriteLine("  --mode <default|webapi>   Report focus mode (default: full dump)");
         Console.WriteLine("  --help, -h         Show this help");
@@ -38,6 +40,7 @@ class Program
         Console.WriteLine("  projdump MyApp.sln output/context.md --slim");
         Console.WriteLine("  projdump MyApp.sln --exclude-tests --scope src/MyApp.Api");
         Console.WriteLine("  projdump MyApp.Api.csproj --mode webapi");
+        Console.WriteLine("  projdump MyApp.Api.csproj --mode webapi --exclude-dir wwwroot");
         Console.WriteLine("  projdump ./frontend");
         Console.ResetColor();
     }
@@ -63,6 +66,7 @@ class Program
         string? scopeDir = null;
         string? typeArg = null;
         string? modeArg = null;
+        var excludeDirs = new List<string>();
 
         var positional = new List<string>();
 
@@ -79,6 +83,10 @@ class Program
                 case "--scope":
                     if (i + 1 >= args.Length) { PrintError("--scope requires a directory argument."); return null; }
                     scopeDir = args[++i];
+                    break;
+                case "--exclude-dir":
+                    if (i + 1 >= args.Length) { PrintError("--exclude-dir requires a directory name."); return null; }
+                    excludeDirs.Add(args[++i]);
                     break;
                 case "--type":
                     if (i + 1 >= args.Length) { PrintError("--type requires a value."); return null; }
@@ -111,7 +119,8 @@ class Program
             ExcludeTests: excludeTests,
             ScopeDir: scopeDir,
             TypeArg: typeArg,
-            ModeArg: modeArg);
+            ModeArg: modeArg,
+            ExcludeDirs: excludeDirs);
     }
 
     static RunOptions? PromptForOptions()
@@ -130,12 +139,16 @@ class Program
         bool slim = PromptYesNo("Slim mode - omit file contents? [y/N]: ");
         bool excludeTests = PromptYesNo("Exclude test files? [y/N]: ");
         string? scopeDir = OrNull(Prompt("Scope to a subdirectory (blank = whole project): "));
+        string? excludeDirsInput = OrNull(Prompt("Exclude directories, comma-separated e.g. wwwroot,docs (blank = none): "));
+        var excludeDirs = excludeDirsInput == null
+            ? []
+            : excludeDirsInput.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         string? typeArg = OrNull(Prompt("Project type - csharp/vue (blank = auto-detect): "));
         string? modeArg = OrNull(Prompt("Mode - default/webapi (blank = default): "));
 
         Console.WriteLine();
 
-        return new RunOptions(inputPath, customOutputPath, slim, excludeTests, scopeDir, typeArg, modeArg);
+        return new RunOptions(inputPath, customOutputPath, slim, excludeTests, scopeDir, typeArg, modeArg, excludeDirs);
     }
 
     static string Prompt(string label)
@@ -164,7 +177,7 @@ class Program
             var analyzer = registry.Resolve(options.InputPath, options.TypeArg);
             ProjectTypeRegistry.ValidateMode(analyzer, modeKey);
 
-            var analysisOptions = new ProjectAnalysisOptions { ExcludeTests = options.ExcludeTests, ScopeDir = options.ScopeDir };
+            var analysisOptions = new ProjectAnalysisOptions { ExcludeTests = options.ExcludeTests, ScopeDir = options.ScopeDir, ExcludeDirs = options.ExcludeDirs };
             analysis = analyzer.Analyze(options.InputPath, analysisOptions);
 
             IDumpMode mode = modeKey switch
@@ -214,6 +227,7 @@ class Program
             Slim = options.Slim,
             ExcludeTests = options.ExcludeTests,
             ScopeDir = options.ScopeDir,
+            ExcludeDirs = options.ExcludeDirs,
             AllFiles = [.. analysis.AllFiles.Select(e => e.File)],
             CodeFiles = [.. analysis.CodeFiles.Select(e => e.File)],
             ConfigFiles = [.. analysis.ConfigFiles.Select(e => e.File)],

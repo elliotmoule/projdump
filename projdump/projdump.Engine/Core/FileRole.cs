@@ -10,6 +10,7 @@ public enum FileRole
     Doc,
     Component,
     Style,
+    Asset,
     Test,
     Build,
     Other,

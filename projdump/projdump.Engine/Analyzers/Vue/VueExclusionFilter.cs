@@ -17,10 +17,7 @@ sealed class VueExclusionFilter : IFileExclusionFilter
         $"{Path.DirectorySeparatorChar}dist{Path.DirectorySeparatorChar}",
     ];
 
-    static readonly string[] ExcludedFileSuffixes = [".min.js", ".min.css"];
-
     public bool IsExcluded(FileInfo f) =>
         ExcludedFileNames.Contains(f.Name) ||
-        ExcludedPathSegments.Any(seg => f.FullName.Contains(seg)) ||
-        ExcludedFileSuffixes.Any(suffix => f.Name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+        ExcludedPathSegments.Any(seg => f.FullName.Contains(seg));
 }

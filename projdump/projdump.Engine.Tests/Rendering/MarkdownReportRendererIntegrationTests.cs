@@ -12,6 +12,7 @@ public class MarkdownReportRendererIntegrationTests
         bool slim = false,
         bool excludeTests = false,
         string? scopeDir = null,
+        IReadOnlyList<string>? excludeDirs = null,
         bool includeReadme = true,
         bool includeConfig = true)
     {
@@ -32,6 +33,7 @@ public class MarkdownReportRendererIntegrationTests
             Slim = slim,
             ExcludeTests = excludeTests,
             ScopeDir = scopeDir,
+            ExcludeDirs = excludeDirs ?? [],
             AllFiles = allFiles,
             CodeFiles = [new FileInfo(programPath)],
             ConfigFiles = includeConfig ? [new FileInfo(configPath)] : [],
@@ -107,7 +109,7 @@ public class MarkdownReportRendererIntegrationTests
     public void Render_FlagsNote_ListsActiveFlags()
     {
         using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false, slim: true, excludeTests: true, scopeDir: "src");
+        var request = BuildRequest(temp, isSolution: false, slim: true, excludeTests: true, scopeDir: "src", excludeDirs: ["wwwroot", "docs"]);
 
         var (output, _) = MarkdownReportRenderer.Render(request);
 
@@ -115,6 +117,8 @@ public class MarkdownReportRendererIntegrationTests
         Assert.That(output, Does.Contain("`--slim`"));
         Assert.That(output, Does.Contain("`--exclude-tests`"));
         Assert.That(output, Does.Contain("`--scope src`"));
+        Assert.That(output, Does.Contain("`--exclude-dir wwwroot`"));
+        Assert.That(output, Does.Contain("`--exclude-dir docs`"));
     }
 
     [Test]

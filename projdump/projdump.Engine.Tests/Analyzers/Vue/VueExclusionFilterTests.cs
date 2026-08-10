@@ -30,13 +30,6 @@ public class VueExclusionFilterTests
         Assert.That(_filter.IsExcluded(new FileInfo(fileName)), Is.True);
     }
 
-    [TestCase("app.min.js")]
-    [TestCase("app.min.css")]
-    public void IsExcluded_ReturnsTrue_ForMinifiedAssets(string fileName)
-    {
-        Assert.That(_filter.IsExcluded(new FileInfo(fileName)), Is.True);
-    }
-
     [Test]
     public void IsExcluded_ReturnsFalse_ForRegularSourceFile()
     {

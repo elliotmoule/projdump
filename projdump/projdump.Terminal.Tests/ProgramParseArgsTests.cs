@@ -63,6 +63,38 @@ public class ProgramParseArgsTests
     }
 
     [Test]
+    public void ParseArgs_ExcludeDirFlag_AddsToList()
+    {
+        var options = Program.ParseArgs(["MyApp.sln", "--exclude-dir", "wwwroot"]);
+
+        Assert.That(options!.ExcludeDirs, Is.EquivalentTo(["wwwroot"]));
+    }
+
+    [Test]
+    public void ParseArgs_ExcludeDirFlag_IsRepeatable()
+    {
+        var options = Program.ParseArgs(["MyApp.sln", "--exclude-dir", "wwwroot", "--exclude-dir", "docs"]);
+
+        Assert.That(options!.ExcludeDirs, Is.EquivalentTo(["wwwroot", "docs"]));
+    }
+
+    [Test]
+    public void ParseArgs_ExcludeDirFlagWithoutValue_ReturnsNull()
+    {
+        var options = Program.ParseArgs(["MyApp.sln", "--exclude-dir"]);
+
+        Assert.That(options, Is.Null);
+    }
+
+    [Test]
+    public void ParseArgs_NoExcludeDirFlag_DefaultsToEmpty()
+    {
+        var options = Program.ParseArgs(["MyApp.sln"]);
+
+        Assert.That(options!.ExcludeDirs, Is.Empty);
+    }
+
+    [Test]
     public void ParseArgs_TypeFlag_SetsTypeArg()
     {
         var options = Program.ParseArgs(["MyApp.sln", "--type", "csharp"]);
@@ -114,7 +146,7 @@ public class ProgramParseArgsTests
     [Test]
     public void ParseArgs_AllFlagsTogether_SetsEverything()
     {
-        var options = Program.ParseArgs(["MyApp.sln", "out.md", "--slim", "--exclude-tests", "--scope", "src", "--type", "csharp", "--mode", "webapi"]);
+        var options = Program.ParseArgs(["MyApp.sln", "out.md", "--slim", "--exclude-tests", "--scope", "src", "--exclude-dir", "wwwroot", "--type", "csharp", "--mode", "webapi"]);
 
         using (Assert.EnterMultipleScope())
         {
@@ -123,6 +155,7 @@ public class ProgramParseArgsTests
             Assert.That(options.Slim, Is.True);
             Assert.That(options.ExcludeTests, Is.True);
             Assert.That(options.ScopeDir, Is.EqualTo("src"));
+            Assert.That(options.ExcludeDirs, Is.EquivalentTo(["wwwroot"]));
             Assert.That(options.TypeArg, Is.EqualTo("csharp"));
             Assert.That(options.ModeArg, Is.EqualTo("webapi"));
         }

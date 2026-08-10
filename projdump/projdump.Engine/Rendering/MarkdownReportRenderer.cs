@@ -30,6 +30,7 @@ public static class MarkdownReportRenderer
         if (request.Slim) activeFlags.Add("`--slim`");
         if (request.ExcludeTests) activeFlags.Add("`--exclude-tests`");
         if (request.ScopeDir != null) activeFlags.Add($"`--scope {request.ScopeDir}`");
+        foreach (var dir in request.ExcludeDirs) activeFlags.Add($"`--exclude-dir {dir}`");
         if (activeFlags.Count > 0)
         {
             sb.AppendLine($"> **Flags:** {string.Join(", ", activeFlags)}");

@@ -26,6 +26,11 @@ static class VueFileClassifier
     };
 
     static readonly HashSet<string> CodeExtensions = new(StringComparer.OrdinalIgnoreCase) { ".vue", ".js", ".ts", ".jsx", ".tsx", ".css", ".scss", ".sass", ".less" };
+    static readonly HashSet<string> AssetExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".ico", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif",
+        ".woff", ".woff2", ".ttf", ".eot", ".otf",
+    };
 
     public static bool IsCodeFile(FileInfo f) => CodeExtensions.Contains(f.Extension);
 
@@ -86,6 +91,9 @@ static class VueFileClassifier
             f.Extension.Equals(".sass", StringComparison.OrdinalIgnoreCase) ||
             f.Extension.Equals(".less", StringComparison.OrdinalIgnoreCase))
             return FileRole.Style;
+
+        if (AssetExtensions.Contains(f.Extension))
+            return FileRole.Asset;
 
         return FileRole.Other;
     }

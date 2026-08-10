@@ -24,6 +24,11 @@ static class CSharpFileClassifier
 
     static readonly HashSet<string> ConfigExtensions = new(StringComparer.OrdinalIgnoreCase) { ".json", ".xml", ".config", ".yml", ".yaml", ".env" };
     static readonly HashSet<string> CodeExtensions = new(StringComparer.OrdinalIgnoreCase) { ".cs", ".xaml", ".cshtml", ".css", ".js", ".ts" };
+    static readonly HashSet<string> AssetExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".ico", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif",
+        ".woff", ".woff2", ".ttf", ".eot", ".otf",
+    };
 
     public static bool IsCodeFile(FileInfo f) => CodeExtensions.Contains(f.Extension);
 
@@ -102,6 +107,9 @@ static class CSharpFileClassifier
 
         if (f.Extension.Equals(".css", StringComparison.OrdinalIgnoreCase))
             return FileRole.Style;
+
+        if (AssetExtensions.Contains(f.Extension))
+            return FileRole.Asset;
 
         return FileRole.Other;
     }

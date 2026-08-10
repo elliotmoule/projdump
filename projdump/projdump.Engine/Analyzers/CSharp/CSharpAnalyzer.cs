@@ -8,6 +8,7 @@ public sealed class CSharpAnalyzer : IProjectAnalyzer
     // Generic cross-stack rules plus this stack's own.
     static readonly IFileExclusionFilter ExclusionFilter = new CompositeExclusionFilter(
         new VcsAndToolingExclusionFilter(),
+        new MinifiedAssetExclusionFilter(),
         new CSharpExclusionFilter());
 
     static readonly ITestFileDetector TestFileDetector = new CompositeTestFileDetector(
@@ -46,10 +47,14 @@ public sealed class CSharpAnalyzer : IProjectAnalyzer
 
         bool isSolution = extension == ".sln" || extension == ".slnx";
 
+        IFileExclusionFilter effectiveExclusionFilter = options.ExcludeDirs.Count > 0
+            ? new CompositeExclusionFilter(ExclusionFilter, new UserDirExclusionFilter(options.ExcludeDirs))
+            : ExclusionFilter;
+
         // Gather all files
         var allFileInfos = rootDir.GetFiles("*.*", SearchOption.AllDirectories)
             .Where(f =>
-                !ExclusionFilter.IsExcluded(f) &&
+                !effectiveExclusionFilter.IsExcluded(f) &&
                 !(options.ExcludeTests && TestFileDetector.IsTestFile(f))
             )
             .OrderBy(f => f.DirectoryName)

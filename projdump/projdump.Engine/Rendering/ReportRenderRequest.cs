@@ -10,6 +10,7 @@ public sealed class ReportRenderRequest
     public required bool Slim { get; init; }
     public required bool ExcludeTests { get; init; }
     public string? ScopeDir { get; init; }
+    public IReadOnlyList<string> ExcludeDirs { get; init; } = [];
     public required List<FileInfo> AllFiles { get; init; }
     public required List<FileInfo> CodeFiles { get; init; }
     public required List<FileInfo> ConfigFiles { get; init; }

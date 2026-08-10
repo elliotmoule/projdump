@@ -8,13 +8,14 @@ namespace projdump.Engine.Tests.Modes;
 public class WebApiModeTests
 {
     [Test]
-    public void Apply_DropsComponentAndStyleFiles()
+    public void Apply_DropsComponentStyleAndAssetFiles()
     {
         var analysis = ProjectAnalysisFactory.Create(
             ProjectAnalysisFactory.Entry("Program.cs", FileRole.EntryPoint),
             ProjectAnalysisFactory.Entry("OrdersController.cs", FileRole.ApiSurface),
             ProjectAnalysisFactory.Entry("MainWindow.xaml", FileRole.Component),
-            ProjectAnalysisFactory.Entry("site.css", FileRole.Style));
+            ProjectAnalysisFactory.Entry("site.css", FileRole.Style),
+            ProjectAnalysisFactory.Entry("logo.png", FileRole.Asset));
 
         var result = new WebApiMode().Apply(analysis);
 
