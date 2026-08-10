@@ -1,148 +1,68 @@
-﻿using System.Text;
+﻿using projdump.Engine.Analyzers.CSharp;
+using projdump.Engine.Analyzers.Vue;
+using projdump.Engine.Core;
+using projdump.Engine.Modes;
+using projdump.Engine.Rendering;
 
 class Program
 {
-    #region Exclusions
-    static readonly HashSet<string> ExcludedFileNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "AssemblyInfo.cs",
-        "GlobalUsings.cs",
-        "GlobalUsings.g.cs",
-    };
-
-    static readonly string[] ExcludedPathSegments =
-    [
-        $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}.git{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}.vs{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}.vscode{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}Migrations{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}node_modules{Path.DirectorySeparatorChar}",
-    ];
-
-    // Files whose names end with these suffixes are likely auto-generated
-    static readonly string[] ExcludedFileSuffixes = [".designer.cs", ".g.cs", ".g.i.cs", ".min.js", ".min.css"];
-
-    // Folder name segments that indicate a test project
-    static readonly string[] TestPathSegments =
-    [
-        $"{Path.DirectorySeparatorChar}Tests{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}Test{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}Specs{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}UnitTests{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}IntegrationTests{Path.DirectorySeparatorChar}",
-    ];
-    #endregion
-
-    #region Config files
-    // Config files to capture
-    static readonly HashSet<string> ConfigFileNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "appsettings.json",
-        "appsettings.Development.json",
-        "appsettings.Production.json",
-        "appsettings.Staging.json",
-        "web.config",
-        "app.config",
-        "launchSettings.json",
-        ".env.example",
-        ".env.template",
-        "dockerfile",
-        "docker-compose.yml",
-        "docker-compose.yaml",
-    };
-    #endregion
-
-    // Code file ordering — lower index = higher priority (appears earlier)
-    static readonly string[] EntryPointNames = ["Program.cs", "Startup.cs", "App.xaml.cs"];
-
-    static int CodeFilePriority(FileInfo f)
-    {
-        if (EntryPointNames.Contains(f.Name, StringComparer.OrdinalIgnoreCase)) return 0;
-        if (f.Name.StartsWith('I') && char.IsUpper(f.Name.Length > 1 ? f.Name[1] : ' ')) return 1; // IFoo interfaces
-        if (f.Name.EndsWith("Interface.cs", StringComparison.OrdinalIgnoreCase)) return 1;
-        if (f.Name.EndsWith("Model.cs", StringComparison.OrdinalIgnoreCase)) return 2;
-        if (f.Name.EndsWith("Models.cs", StringComparison.OrdinalIgnoreCase)) return 2;
-        if (f.Name.EndsWith("Entity.cs", StringComparison.OrdinalIgnoreCase)) return 2;
-        if (f.Name.EndsWith("Dto.cs", StringComparison.OrdinalIgnoreCase)) return 2;
-        if (f.Name.EndsWith("Enum.cs", StringComparison.OrdinalIgnoreCase)) return 2;
-        if (f.Name.EndsWith("Enums.cs", StringComparison.OrdinalIgnoreCase)) return 2;
-        if (f.Name.EndsWith("Constants.cs", StringComparison.OrdinalIgnoreCase)) return 3;
-        if (f.Name.EndsWith("Extension.cs", StringComparison.OrdinalIgnoreCase)) return 4;
-        if (f.Name.EndsWith("Extensions.cs", StringComparison.OrdinalIgnoreCase)) return 4;
-        if (f.Name.EndsWith("Helper.cs", StringComparison.OrdinalIgnoreCase)) return 4;
-        if (f.Name.EndsWith("Helpers.cs", StringComparison.OrdinalIgnoreCase)) return 4;
-        return 5; // everything else
-    }
-
-    #region Helpers
-    static bool IsTestFile(FileInfo f) =>
-    TestPathSegments.Any(seg => f.FullName.Contains(seg)) ||
-    f.Name.EndsWith("Tests.cs", StringComparison.OrdinalIgnoreCase) ||
-    f.Name.EndsWith("Test.cs", StringComparison.OrdinalIgnoreCase) ||
-    f.Name.EndsWith("Spec.cs", StringComparison.OrdinalIgnoreCase) ||
-    f.Name.EndsWith("Specs.cs", StringComparison.OrdinalIgnoreCase) ||
-    (f.Extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase) && (
-        f.Name.Contains("Test", StringComparison.OrdinalIgnoreCase) ||
-        f.Name.Contains("Spec", StringComparison.OrdinalIgnoreCase)
-    ));
-
-    static string FormatFileSize(long bytes) => bytes switch
-    {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-        _ => $"{bytes / (1024.0 * 1024):F1} MB",
-    };
-
-    static string GetMarkdownLanguage(string extension) => extension.ToLower() switch
-    {
-        ".cs" => "csharp",
-        ".xaml" or ".csproj" or ".slnx" => "xml",
-        ".xml" or ".config" or ".app" => "xml",
-        ".cshtml" => "razor",
-        ".css" => "css",
-        ".js" => "javascript",
-        ".ts" => "typescript",
-        ".json" => "json",
-        ".yml" or ".yaml" => "yaml",
-        _ => "text"
-    };
+    internal sealed record RunOptions(
+        string InputPath,
+        string? CustomOutputPath,
+        bool Slim,
+        bool ExcludeTests,
+        string? ScopeDir,
+        string? TypeArg,
+        string? ModeArg);
 
     static void PrintUsage()
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("Usage: projdump <path-to-solution-or-project> [output-path] [options]");
+        Console.WriteLine("Usage: projdump <path> [output-path] [options]");
+        Console.WriteLine("       projdump                          (no args = interactive mode)");
         Console.WriteLine();
-        Console.WriteLine("Supported input formats: .sln, .slnx, .csproj");
+        Console.WriteLine("Supported input:");
+        Console.WriteLine("  .sln, .slnx, .csproj              C# solution or project");
+        Console.WriteLine("  <directory> or package.json        Vue project (auto-detected via a 'vue' dependency)");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --slim             Omit file contents; list filenames and sizes only");
         Console.WriteLine("  --exclude-tests    Exclude test projects and test files");
-        Console.WriteLine("  --scope <dir>      Restrict to a subdirectory (relative to solution/project root)");
+        Console.WriteLine("  --scope <dir>      Restrict to a subdirectory (relative to project root)");
+        Console.WriteLine("  --type <csharp|vue>       Force project type (auto-detected by default)");
+        Console.WriteLine("  --mode <default|webapi>   Report focus mode (default: full dump)");
         Console.WriteLine("  --help, -h         Show this help");
         Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.WriteLine("  projdump MyApp.sln");
         Console.WriteLine("  projdump MyApp.sln output/context.md --slim");
         Console.WriteLine("  projdump MyApp.sln --exclude-tests --scope src/MyApp.Api");
+        Console.WriteLine("  projdump MyApp.Api.csproj --mode webapi");
+        Console.WriteLine("  projdump ./frontend");
         Console.ResetColor();
     }
-    #endregion
+
+    static void PrintError(string message)
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"Error: {message}");
+        Console.ResetColor();
+    }
 
     static void Main(string[] args)
     {
-        if (args.Length == 0)
-        {
-            PrintUsage();
-            return;
-        }
+        RunOptions? options = args.Length == 0 ? PromptForOptions() : ParseArgs(args);
+        if (options == null) return;
+        Execute(options);
+    }
 
-        // Positional: first non-flag arg = input path, second = output path
-        // Flags: --slim, --exclude-tests, --scope <relative-dir>
+    internal static RunOptions? ParseArgs(string[] args)
+    {
         bool slim = false;
         bool excludeTests = false;
         string? scopeDir = null;
+        string? typeArg = null;
+        string? modeArg = null;
 
         var positional = new List<string>();
 
@@ -157,19 +77,21 @@ class Program
                     excludeTests = true;
                     break;
                 case "--scope":
-                    if (i + 1 >= args.Length)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("Error: --scope requires a directory argument.");
-                        Console.ResetColor();
-                        return;
-                    }
+                    if (i + 1 >= args.Length) { PrintError("--scope requires a directory argument."); return null; }
                     scopeDir = args[++i];
+                    break;
+                case "--type":
+                    if (i + 1 >= args.Length) { PrintError("--type requires a value."); return null; }
+                    typeArg = args[++i];
+                    break;
+                case "--mode":
+                    if (i + 1 >= args.Length) { PrintError("--mode requires a value."); return null; }
+                    modeArg = args[++i];
                     break;
                 case "--help":
                 case "-h":
                     PrintUsage();
-                    return;
+                    return null;
                 default:
                     positional.Add(args[i]);
                     break;
@@ -179,55 +101,100 @@ class Program
         if (positional.Count == 0)
         {
             PrintUsage();
-            return;
+            return null;
         }
 
-        string inputPath = positional[0];
-        string? customOutputPath = positional.Count > 1 ? positional[1] : null;
-        string extension = Path.GetExtension(inputPath).ToLower();
-        bool isValidExtension = extension == ".sln" || extension == ".slnx" || extension == ".csproj";
+        return new RunOptions(
+            InputPath: positional[0],
+            CustomOutputPath: positional.Count > 1 ? positional[1] : null,
+            Slim: slim,
+            ExcludeTests: excludeTests,
+            ScopeDir: scopeDir,
+            TypeArg: typeArg,
+            ModeArg: modeArg);
+    }
 
-        if (!File.Exists(inputPath) || !isValidExtension)
+    static RunOptions? PromptForOptions()
+    {
+        Console.WriteLine("projdump interactive mode (run with --help to see the non-interactive flags)");
+        Console.WriteLine();
+
+        string inputPath = Prompt("Path to .sln/.slnx/.csproj, or a Vue project directory: ").Trim('"');
+        if (string.IsNullOrWhiteSpace(inputPath))
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"Error: '{inputPath}' is not a valid or existing .sln, .slnx, or .csproj file.");
-            Console.ResetColor();
-            return;
+            PrintError("No path provided.");
+            return null;
         }
 
-        FileInfo inputFileInfo = new(inputPath);
-        DirectoryInfo rootDir = inputFileInfo.Directory!;
-        if (rootDir == null) return;
+        string? customOutputPath = OrNull(Prompt("Output path (blank = alongside the project): "));
+        bool slim = PromptYesNo("Slim mode - omit file contents? [y/N]: ");
+        bool excludeTests = PromptYesNo("Exclude test files? [y/N]: ");
+        string? scopeDir = OrNull(Prompt("Scope to a subdirectory (blank = whole project): "));
+        string? typeArg = OrNull(Prompt("Project type - csharp/vue (blank = auto-detect): "));
+        string? modeArg = OrNull(Prompt("Mode - default/webapi (blank = default): "));
 
-        // Apply --scope: restrict file discovery to a subdirectory
-        if (scopeDir != null)
+        Console.WriteLine();
+
+        return new RunOptions(inputPath, customOutputPath, slim, excludeTests, scopeDir, typeArg, modeArg);
+    }
+
+    static string Prompt(string label)
+    {
+        Console.Write(label);
+        return (Console.ReadLine() ?? "").Trim();
+    }
+
+    static bool PromptYesNo(string label)
+    {
+        string answer = Prompt(label);
+        return answer.Equals("y", StringComparison.OrdinalIgnoreCase) || answer.Equals("yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static string? OrNull(string value) => value.Length > 0 ? value : null;
+
+    internal static void Execute(RunOptions options)
+    {
+        string modeKey = options.ModeArg ?? "default";
+
+        var registry = new ProjectTypeRegistry([new CSharpAnalyzer(), new VueProjectAnalyzer()]);
+
+        ProjectAnalysis analysis;
+        try
         {
-            string scopedPath = Path.GetFullPath(Path.Combine(rootDir.FullName, scopeDir));
-            if (!Directory.Exists(scopedPath))
+            var analyzer = registry.Resolve(options.InputPath, options.TypeArg);
+            registry.ValidateMode(analyzer, modeKey);
+
+            var analysisOptions = new ProjectAnalysisOptions { ExcludeTests = options.ExcludeTests, ScopeDir = options.ScopeDir };
+            analysis = analyzer.Analyze(options.InputPath, analysisOptions);
+
+            IDumpMode mode = modeKey switch
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"Error: --scope directory '{scopeDir}' does not exist under '{rootDir.FullName}'.");
-                Console.ResetColor();
-                return;
-            }
-            rootDir = new DirectoryInfo(scopedPath);
+                "default" => new DefaultMode(),
+                "webapi" => new WebApiMode(),
+                _ => throw new ProjectAnalysisException($"Mode '{modeKey}' has no implementation yet."),
+            };
+            analysis = mode.Apply(analysis);
+        }
+        catch (ProjectAnalysisException ex)
+        {
+            PrintError(ex.Message);
+            return;
         }
 
-        bool isSolution = extension == ".sln" || extension == ".slnx";
-        string modeSuffix = slim ? "-slim" : "";
-        string outputFileName = isSolution ? $"app-solution{modeSuffix}.md" : $"app-project{modeSuffix}.md";
+        string modeSuffix = options.Slim ? "-slim" : "";
+        string projectKind = analysis.IsSolution ? "app-solution" : "app-project";
+        string outputFileName = $"{SanitizeForFileName(analysis.ProjectName)}-{projectKind}{modeSuffix}.md";
 
-        // Resolve output path
         string outputPath;
-        if (customOutputPath != null)
+        if (options.CustomOutputPath != null)
         {
-            bool looksLikeDir = string.IsNullOrEmpty(Path.GetExtension(customOutputPath))
-                                || customOutputPath.EndsWith(Path.DirectorySeparatorChar)
-                                || customOutputPath.EndsWith(Path.AltDirectorySeparatorChar);
+            bool looksLikeDir = string.IsNullOrEmpty(Path.GetExtension(options.CustomOutputPath))
+                                || options.CustomOutputPath.EndsWith(Path.DirectorySeparatorChar)
+                                || options.CustomOutputPath.EndsWith(Path.AltDirectorySeparatorChar);
 
             outputPath = looksLikeDir
-                ? Path.Combine(customOutputPath, outputFileName)
-                : customOutputPath;
+                ? Path.Combine(options.CustomOutputPath, outputFileName)
+                : options.CustomOutputPath;
 
             string? outputDir = Path.GetDirectoryName(outputPath);
             if (!string.IsNullOrEmpty(outputDir))
@@ -235,217 +202,41 @@ class Program
         }
         else
         {
-            outputPath = Path.Combine(rootDir.FullName, outputFileName);
+            outputPath = Path.Combine(analysis.RootDir.FullName, outputFileName);
         }
 
-        // Gather all files
-        var allFiles = rootDir.GetFiles("*.*", SearchOption.AllDirectories)
-            .Where(f =>
-                !ExcludedPathSegments.Any(seg => f.FullName.Contains(seg)) &&
-                !ExcludedFileNames.Contains(f.Name) &&
-                !ExcludedFileSuffixes.Any(suffix => f.Name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) &&
-                !(excludeTests && IsTestFile(f))
-            )
-            .OrderBy(f => f.DirectoryName)
-            .ThenBy(f => f.Name)
-            .ToList();
-
-        // Categorise files
-        var codeExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs", ".xaml", ".cshtml", ".css", ".js", ".ts" };
-        var configExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".json", ".xml", ".config", ".yml", ".yaml", ".env" };
-
-        var codeFiles = allFiles
-            .Where(f => codeExtensions.Contains(f.Extension))
-            .OrderBy(CodeFilePriority)
-            .ThenBy(f => f.DirectoryName)
-            .ThenBy(f => f.Name)
-            .ToList();
-
-        var configFiles = allFiles
-            .Where(f => ConfigFileNames.Contains(f.Name) ||
-                        (configExtensions.Contains(f.Extension) && f.Name.StartsWith("appsettings", StringComparison.OrdinalIgnoreCase)))
-            .ToList();
-
-        var readmeFiles = allFiles
-            .Where(f => f.Extension.Equals(".md", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        var projFiles = isSolution
-            ? allFiles.Where(f => f.Extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase)).ToList()
-            : [inputFileInfo];
-
-        // Build md output
-        StringBuilder sb = new();
-
-        // Header
-        string modeLabel = slim ? " (slim)" : "";
-        sb.AppendLine($"# {inputFileInfo.Name} - {(isSolution ? "App Solution" : "App Project")}{modeLabel}");
-        sb.AppendLine();
-
-        if (slim)
+        var renderRequest = new ReportRenderRequest
         {
-            sb.AppendLine("> **Slim mode:** file contents are omitted. Each entry shows the file name, path, and size.");
-            sb.AppendLine();
-        }
+            InputFileInfo = analysis.InputFileInfo,
+            RootDir = analysis.RootDir,
+            IsSolution = analysis.IsSolution,
+            Extension = analysis.Extension,
+            Slim = options.Slim,
+            ExcludeTests = options.ExcludeTests,
+            ScopeDir = options.ScopeDir,
+            AllFiles = analysis.AllFiles.Select(e => e.File).ToList(),
+            CodeFiles = analysis.CodeFiles.Select(e => e.File).ToList(),
+            ConfigFiles = analysis.ConfigFiles.Select(e => e.File).ToList(),
+            ReadmeFiles = analysis.ReadmeFiles.Select(e => e.File).ToList(),
+            ProjFiles = analysis.ProjFiles.Select(e => e.File).ToList(),
+        };
 
-        // Token estimate placeholder — filled in at the end
-        const string tokenPlaceholderLine = "%%TOKEN_ESTIMATE%%";
-        sb.AppendLine(tokenPlaceholderLine);
-        sb.AppendLine();
-
-        // Active flags note
-        var activeFlags = new List<string>();
-        if (slim) activeFlags.Add("`--slim`");
-        if (excludeTests) activeFlags.Add("`--exclude-tests`");
-        if (scopeDir != null) activeFlags.Add($"`--scope {scopeDir}`");
-        if (activeFlags.Count > 0)
-        {
-            sb.AppendLine($"> **Flags:** {string.Join(", ", activeFlags)}");
-            sb.AppendLine();
-        }
-
-        // File Summary Table
-        sb.AppendLine("## Project Summary");
-        var stats = allFiles
-            .GroupBy(f => f.Extension.ToLower())
-            .Select(g => new { Ext = string.IsNullOrEmpty(g.Key) ? "No Ext" : g.Key, Count = g.Count() })
-            .OrderByDescending(x => x.Count);
-
-        sb.AppendLine("| File Extension | Count |");
-        sb.AppendLine("| :--- | :--- |");
-        foreach (var stat in stats)
-            sb.AppendLine($"| {stat.Ext} | {stat.Count} |");
-        sb.AppendLine();
-
-        // File Structure
-        sb.AppendLine("## Project Structure");
-        sb.AppendLine("```text");
-        foreach (var file in allFiles)
-            sb.AppendLine(Path.GetRelativePath(rootDir.FullName, file.FullName));
-        sb.AppendLine("```");
-        sb.AppendLine();
-
-        // README / Documentation
-        if (readmeFiles.Count > 0)
-        {
-            sb.AppendLine("## Documentation");
-            foreach (var file in readmeFiles)
-            {
-                string relativePath = Path.GetRelativePath(rootDir.FullName, file.FullName);
-                sb.AppendLine($"### {file.Name}");
-                sb.AppendLine($"**Path:** `{relativePath}`");
-                sb.AppendLine();
-                if (slim)
-                    sb.AppendLine($"_File size: {FormatFileSize(file.Length)}_");
-                else
-                    sb.AppendLine(File.ReadAllText(file.FullName).Trim());
-                sb.AppendLine();
-            }
-        }
-
-        // Solution Configuration
-        if (isSolution)
-        {
-            sb.AppendLine("## Solution Configuration");
-            string slnLang = extension == ".slnx" ? "xml" : "text";
-            sb.AppendLine($"### {inputFileInfo.Name}");
-            sb.AppendLine($"**Path:** `{inputFileInfo.Name}`");
-            sb.AppendLine();
-            if (slim)
-            {
-                sb.AppendLine($"_File size: {FormatFileSize(inputFileInfo.Length)}_");
-            }
-            else
-            {
-                sb.AppendLine($"```{slnLang}");
-                sb.AppendLine(File.ReadAllText(inputPath).Trim());
-                sb.AppendLine("```");
-            }
-            sb.AppendLine();
-        }
-
-        // Project Dependencies
-        sb.AppendLine("## Project Dependencies");
-        foreach (var proj in projFiles)
-        {
-            string relativePath = Path.GetRelativePath(rootDir.FullName, proj.FullName);
-            sb.AppendLine($"### {proj.Name}");
-            sb.AppendLine($"**Path:** `{relativePath}`");
-            sb.AppendLine();
-            if (slim)
-            {
-                sb.AppendLine($"_File size: {FormatFileSize(proj.Length)}_");
-            }
-            else
-            {
-                sb.AppendLine("```xml");
-                sb.AppendLine(File.ReadAllText(proj.FullName).Trim());
-                sb.AppendLine("```");
-            }
-        }
-        sb.AppendLine();
-
-        // Configuration Files
-        if (configFiles.Count > 0)
-        {
-            sb.AppendLine("## Configuration");
-            foreach (var file in configFiles)
-            {
-                string relativePath = Path.GetRelativePath(rootDir.FullName, file.FullName);
-                sb.AppendLine($"### {file.Name}");
-                sb.AppendLine($"**Path:** `{relativePath}`");
-                sb.AppendLine();
-                if (slim)
-                {
-                    sb.AppendLine($"_File size: {FormatFileSize(file.Length)}_");
-                }
-                else
-                {
-                    string lang = GetMarkdownLanguage(file.Extension);
-                    sb.AppendLine($"```{lang}");
-                    sb.AppendLine(File.ReadAllText(file.FullName).Trim());
-                    sb.AppendLine("```");
-                }
-                sb.AppendLine();
-            }
-        }
-
-        // App Code
-        sb.AppendLine("## App Code");
-        sb.AppendLine();
-        foreach (var file in codeFiles)
-        {
-            string relativePath = Path.GetRelativePath(rootDir.FullName, file.FullName);
-            sb.AppendLine($"### {file.Name}");
-            sb.AppendLine($"**Path:** `{relativePath}`");
-            sb.AppendLine();
-            if (slim)
-            {
-                sb.AppendLine($"_File size: {FormatFileSize(file.Length)}_");
-            }
-            else
-            {
-                string lang = GetMarkdownLanguage(file.Extension);
-                sb.AppendLine($"```{lang}");
-                sb.AppendLine(File.ReadAllText(file.FullName).Trim());
-                sb.AppendLine("```");
-            }
-            sb.AppendLine();
-        }
-
-        // Token estimate (Rough heuristic: GPT/Claude tokenisers average ~4 chars per token for code)
-        string output = sb.ToString();
-        int estimatedTokens = (int)Math.Ceiling(output.Length / 4.0);
-        string tokenLine = $"> **Estimated tokens:** ~{estimatedTokens:N0}  _(character count ÷ 4 — treat as a rough guide)_";
-        output = output.Replace(tokenPlaceholderLine, tokenLine);
+        var (output, estimatedTokens) = MarkdownReportRenderer.Render(renderRequest);
 
         File.WriteAllText(outputPath, output);
 
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"Success! Context generated at: {outputPath}");
         Console.Write($"Estimated tokens: ~{estimatedTokens:N0}");
-        if (slim) Console.Write("  (slim mode — run without --slim for full file contents)");
+        if (options.Slim) Console.Write("  (slim mode — run without --slim for full file contents)");
         Console.WriteLine();
         Console.ResetColor();
+    }
+
+    internal static string SanitizeForFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var sanitized = new string(name.Select(c => invalid.Contains(c) ? '-' : c).ToArray());
+        return string.IsNullOrWhiteSpace(sanitized) ? "project" : sanitized;
     }
 }
