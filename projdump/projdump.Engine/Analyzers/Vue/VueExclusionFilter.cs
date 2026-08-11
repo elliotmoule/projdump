@@ -15,6 +15,7 @@ sealed class VueExclusionFilter : IFileExclusionFilter
     [
         $"{Path.DirectorySeparatorChar}node_modules{Path.DirectorySeparatorChar}",
         $"{Path.DirectorySeparatorChar}dist{Path.DirectorySeparatorChar}",
+        $"{Path.DirectorySeparatorChar}.vite{Path.DirectorySeparatorChar}",
     ];
 
     public bool IsExcluded(FileInfo f) =>

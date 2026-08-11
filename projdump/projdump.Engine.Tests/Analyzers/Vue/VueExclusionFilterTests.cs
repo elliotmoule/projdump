@@ -36,4 +36,11 @@ public class VueExclusionFilterTests
         var path = FakePaths.Combine("src", "OrderList.vue");
         Assert.That(_filter.IsExcluded(new FileInfo(path)), Is.False);
     }
+
+    [Test]
+    public void IsExcluded_ReturnsTrue_ForViteFolder()
+    {
+        var path = FakePaths.Combine(".vite", "vue.js");
+        Assert.That(_filter.IsExcluded(new FileInfo(path)), Is.True);
+    }
 }
