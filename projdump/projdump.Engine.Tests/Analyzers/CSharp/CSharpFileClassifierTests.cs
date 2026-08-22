@@ -101,6 +101,7 @@ public class CSharpFileClassifierTests
     [TestCase("Program.cs", true)]
     [TestCase("site.css", true)]
     [TestCase("appsettings.json", false)]
+    [TestCase("Directory.Build.props", false)]
     [TestCase("README.md", false)]
     public void IsCodeFile_MatchesExpectedExtensions(string fileName, bool expected)
     {
@@ -111,6 +112,7 @@ public class CSharpFileClassifierTests
     [TestCase("appsettings.Development.json", true)]
     [TestCase("web.config", true)]
     [TestCase("launchSettings.json", true)]
+    [TestCase("Directory.Build.props", true)]
     [TestCase("Program.cs", false)]
     public void IsConfigFile_MatchesKnownConfigFiles(string fileName, bool expected)
     {

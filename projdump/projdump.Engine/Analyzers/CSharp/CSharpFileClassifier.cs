@@ -20,6 +20,8 @@ static class CSharpFileClassifier
         "dockerfile",
         "docker-compose.yml",
         "docker-compose.yaml",
+        "Directory.Build.props",
+        "Directory.Packages.props"
     };
 
     static readonly HashSet<string> ConfigExtensions = new(StringComparer.OrdinalIgnoreCase) { ".json", ".xml", ".config", ".yml", ".yaml", ".env" };
