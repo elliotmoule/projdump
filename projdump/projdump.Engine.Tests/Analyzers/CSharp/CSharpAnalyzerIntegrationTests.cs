@@ -40,7 +40,7 @@ public class CSharpAnalyzerIntegrationTests
 
         var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
 
-        Assert.That(analysis.CodeFiles[0].File.Name, Is.EqualTo("Program.cs"));
+        Assert.That(analysis.CodeFiles.First().File.Name, Is.EqualTo("Program.cs"));
     }
 
     [Test]
@@ -96,11 +96,8 @@ public class CSharpAnalyzerIntegrationTests
 
         var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
 
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(analysis.ProjFiles.Select(f => f.File.Name), Is.EquivalentTo(["MyApp.csproj"]));
-            Assert.That(analysis.IsSolution, Is.False);
-        }
+        Assert.That(analysis.ProjFiles.Select(f => f.File.Name), Is.EquivalentTo(new[] { "MyApp.csproj" }));
+        Assert.That(analysis.IsSolution, Is.False);
     }
 
     [Test]
@@ -113,11 +110,8 @@ public class CSharpAnalyzerIntegrationTests
 
         var analysis = new CSharpAnalyzer().Analyze(temp.GetFullPath("MyApp.slnx"), new ProjectAnalysisOptions());
 
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(analysis.IsSolution, Is.True);
-            Assert.That(analysis.ProjFiles.Select(f => f.File.Name), Is.EquivalentTo(["MyApp.Api.csproj", "MyApp.Core.csproj"]));
-        }
+        Assert.That(analysis.IsSolution, Is.True);
+        Assert.That(analysis.ProjFiles.Select(f => f.File.Name), Is.EquivalentTo(new[] { "MyApp.Api.csproj", "MyApp.Core.csproj" }));
     }
 
     [Test]
@@ -205,13 +199,10 @@ public class CSharpAnalyzerIntegrationTests
 
         var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
 
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(analysis.AllFiles.Single(f => f.File.Name == "logo.png").Role, Is.EqualTo(FileRole.Asset));
-            Assert.That(analysis.AllFiles.Single(f => f.File.Name == "site.css").Role, Is.EqualTo(FileRole.Style));
-            // Hand-written JS gets Other, same as any other unclassified code - not dropped by role alone.
-            Assert.That(analysis.AllFiles.Single(f => f.File.Name == "site.js").Role, Is.EqualTo(FileRole.Other));
-        }
+        Assert.That(analysis.AllFiles.Single(f => f.File.Name == "logo.png").Role, Is.EqualTo(FileRole.Asset));
+        Assert.That(analysis.AllFiles.Single(f => f.File.Name == "site.css").Role, Is.EqualTo(FileRole.Style));
+        // Hand-written JS gets Other, same as any other unclassified code - not dropped by role alone.
+        Assert.That(analysis.AllFiles.Single(f => f.File.Name == "site.js").Role, Is.EqualTo(FileRole.Other));
     }
 
     [Test]
@@ -228,5 +219,101 @@ public class CSharpAnalyzerIntegrationTests
         Assert.That(names, Does.Not.Contain("site.js"));
         Assert.That(names, Does.Not.Contain("logo.png"));
         Assert.That(names, Does.Contain("Program.cs"));
+    }
+
+    [Test]
+    public void CanHandle_ReturnsTrue_ForDirectoryContainingSlnx()
+    {
+        using var temp = new TempProjectDirectory();
+        temp.WriteFile("MyApp.slnx", "<Solution></Solution>");
+
+        Assert.That(new CSharpAnalyzer().CanHandle(temp.RootPath), Is.True);
+    }
+
+    [Test]
+    public void CanHandle_ReturnsTrue_ForDirectoryContainingSln()
+    {
+        using var temp = new TempProjectDirectory();
+        temp.WriteFile("MyApp.sln", "Microsoft Visual Studio Solution File");
+
+        Assert.That(new CSharpAnalyzer().CanHandle(temp.RootPath), Is.True);
+    }
+
+    [Test]
+    public void CanHandle_ReturnsFalse_ForDirectoryWithNoSolutionFile()
+    {
+        using var temp = new TempProjectDirectory();
+        temp.WriteFile("Program.cs", "// entry");
+
+        Assert.That(new CSharpAnalyzer().CanHandle(temp.RootPath), Is.False);
+    }
+
+    [Test]
+    public void CanHandle_ReturnsFalse_ForDirectoryWhereSolutionIsOnlyInASubfolder()
+    {
+        // Non-recursive - matches how VueProjectAnalyzer only looks for
+        // package.json directly in the given directory, not deeper.
+        using var temp = new TempProjectDirectory();
+        temp.WriteFile(Path.Combine("Nested", "MyApp.sln"), "Microsoft Visual Studio Solution File");
+
+        Assert.That(new CSharpAnalyzer().CanHandle(temp.RootPath), Is.False);
+    }
+
+    [Test]
+    public void Analyze_DirectoryInput_PrefersSlnxOverSln_WhenBothExist()
+    {
+        using var temp = new TempProjectDirectory();
+        temp.WriteFile("MyApp.sln", "Microsoft Visual Studio Solution File");
+        temp.WriteFile("MyApp.slnx", "<Solution></Solution>");
+        temp.WriteFile("Program.cs", "// entry");
+
+        var analysis = new CSharpAnalyzer().Analyze(temp.RootPath, new ProjectAnalysisOptions());
+
+        Assert.That(analysis.Extension, Is.EqualTo(".slnx"));
+    }
+
+    [Test]
+    public void Analyze_DirectoryInput_ResolvesSingleSlnFile()
+    {
+        using var temp = new TempProjectDirectory();
+        temp.WriteFile("MyApp.sln", "Microsoft Visual Studio Solution File");
+        temp.WriteFile("Program.cs", "// entry");
+
+        var analysis = new CSharpAnalyzer().Analyze(temp.RootPath, new ProjectAnalysisOptions());
+
+        Assert.That(analysis.IsSolution, Is.True);
+        Assert.That(analysis.ProjectName, Is.EqualTo("MyApp"));
+    }
+
+    [Test]
+    public void Analyze_DirectoryInput_ThrowsForMultipleSlnxFiles()
+    {
+        using var temp = new TempProjectDirectory();
+        temp.WriteFile("First.slnx", "<Solution></Solution>");
+        temp.WriteFile("Second.slnx", "<Solution></Solution>");
+
+        Assert.Throws<ProjectAnalysisException>(() =>
+            new CSharpAnalyzer().Analyze(temp.RootPath, new ProjectAnalysisOptions()));
+    }
+
+    [Test]
+    public void Analyze_DirectoryInput_ThrowsForMultipleSlnFiles()
+    {
+        using var temp = new TempProjectDirectory();
+        temp.WriteFile("First.sln", "Microsoft Visual Studio Solution File");
+        temp.WriteFile("Second.sln", "Microsoft Visual Studio Solution File");
+
+        Assert.Throws<ProjectAnalysisException>(() =>
+            new CSharpAnalyzer().Analyze(temp.RootPath, new ProjectAnalysisOptions()));
+    }
+
+    [Test]
+    public void Analyze_DirectoryInput_ThrowsWhenNoSolutionFileFound()
+    {
+        using var temp = new TempProjectDirectory();
+        temp.WriteFile("Program.cs", "// entry");
+
+        Assert.Throws<ProjectAnalysisException>(() =>
+            new CSharpAnalyzer().Analyze(temp.RootPath, new ProjectAnalysisOptions()));
     }
 }

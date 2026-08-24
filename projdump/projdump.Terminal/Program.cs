@@ -3,6 +3,7 @@ using projdump.Engine.Analyzers.Vue;
 using projdump.Engine.Core;
 using projdump.Engine.Modes;
 using projdump.Engine.Rendering;
+using projdump.Shared;
 
 class Program
 {
@@ -16,6 +17,12 @@ class Program
         string? ModeArg,
         IReadOnlyList<string> ExcludeDirs);
 
+    // Test-only override point - if set, used instead of resolving the real Desktop folder.
+    internal static string? DefaultOutputDirectoryOverride;
+
+    // Test-only override point - if set, used instead of the real %APPDATA% history file.
+    internal static string? CommandHistoryFilePathOverride;
+
     static void PrintUsage()
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
@@ -24,7 +31,9 @@ class Program
         Console.WriteLine();
         Console.WriteLine("Supported input:");
         Console.WriteLine("  .sln, .slnx, .csproj              C# solution or project");
-        Console.WriteLine("  <directory> or package.json        Vue project (auto-detected via a 'vue' dependency)");
+        Console.WriteLine("  <directory>                        C# project (auto-discovers a top-level .sln/.slnx),");
+        Console.WriteLine("                                     or a Vue project (auto-detected via a 'vue' dependency)");
+        Console.WriteLine("  package.json                       Vue project");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --slim             Omit file contents; list filenames and sizes only");
@@ -35,6 +44,9 @@ class Program
         Console.WriteLine("  --mode <default|webapi>   Report focus mode (default: full dump)");
         Console.WriteLine("  --help, -h         Show this help");
         Console.WriteLine();
+        Console.WriteLine("If no output path is given, the report is written to your Desktop.");
+        Console.WriteLine("Interactive mode will also offer to reuse or save commands between runs.");
+        Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.WriteLine("  projdump MyApp.sln");
         Console.WriteLine("  projdump MyApp.sln output/context.md --slim");
@@ -42,6 +54,7 @@ class Program
         Console.WriteLine("  projdump MyApp.Api.csproj --mode webapi");
         Console.WriteLine("  projdump MyApp.Api.csproj --mode webapi --exclude-dir wwwroot");
         Console.WriteLine("  projdump ./frontend");
+        Console.WriteLine("  projdump ./MySolutionFolder");
         Console.ResetColor();
     }
 
@@ -54,9 +67,26 @@ class Program
 
     static void Main(string[] args)
     {
-        RunOptions? options = args.Length == 0 ? PromptForOptions() : ParseArgs(args);
+        if (args.Length == 0)
+        {
+            RunInteractive();
+            return;
+        }
+
+        RunOptions? options = ParseArgs(args);
         if (options == null) return;
         Execute(options);
+    }
+
+    static void RunInteractive()
+    {
+        RunOptions? options = TryUseSavedCommand() ?? PromptForOptions();
+        if (options == null) return;
+
+        bool success = Execute(options);
+
+        if (success)
+            OfferToSaveCommand(options);
     }
 
     internal static RunOptions? ParseArgs(string[] args)
@@ -123,19 +153,89 @@ class Program
             ExcludeDirs: excludeDirs);
     }
 
-    static RunOptions? PromptForOptions()
+    internal static RunOptions? TryUseSavedCommand()
+    {
+        var history = CommandHistoryStore.Load(CommandHistoryFilePathOverride);
+        if (history.Count == 0)
+            return null;
+
+        if (!PromptYesNo("Use a recently executed command? [y/N]: "))
+            return null;
+
+        var ordered = history.OrderByDescending(c => c.SavedAt).ToList();
+
+        Console.WriteLine();
+        for (int i = 0; i < ordered.Count; i++)
+            Console.WriteLine($"  {i + 1}. [{ordered[i].SavedAt.ToLocalTime():yyyy-MM-dd HH:mm}] {DescribeCommand(ordered[i])}");
+        Console.WriteLine();
+
+        string choice = Prompt($"Pick a command (1-{ordered.Count}, blank = start fresh): ");
+        if (!int.TryParse(choice, out int index) || index < 1 || index > ordered.Count)
+            return null;
+
+        Console.WriteLine();
+        return ToRunOptions(ordered[index - 1]);
+    }
+
+    static string DescribeCommand(SavedCommand cmd)
+    {
+        var parts = new List<string> { cmd.InputPath };
+        if (cmd.CustomOutputPath != null) parts.Add($"output={cmd.CustomOutputPath}");
+        if (cmd.Slim) parts.Add("slim");
+        if (cmd.ExcludeTests) parts.Add("exclude-tests");
+        if (cmd.ScopeDir != null) parts.Add($"scope={cmd.ScopeDir}");
+        if (cmd.ExcludeDirs.Count > 0) parts.Add($"exclude-dir={string.Join(",", cmd.ExcludeDirs)}");
+        if (cmd.TypeArg != null) parts.Add($"type={cmd.TypeArg}");
+        if (cmd.ModeArg != null) parts.Add($"mode={cmd.ModeArg}");
+        return string.Join(" | ", parts);
+    }
+
+    internal static SavedCommand ToSavedCommand(RunOptions options) => new(
+        DateTimeOffset.Now,
+        options.InputPath,
+        options.CustomOutputPath,
+        options.Slim,
+        options.ExcludeTests,
+        options.ScopeDir,
+        options.TypeArg,
+        options.ModeArg,
+        options.ExcludeDirs);
+
+    internal static RunOptions ToRunOptions(SavedCommand cmd) => new(
+        cmd.InputPath,
+        cmd.CustomOutputPath,
+        cmd.Slim,
+        cmd.ExcludeTests,
+        cmd.ScopeDir,
+        cmd.TypeArg,
+        cmd.ModeArg,
+        cmd.ExcludeDirs);
+
+    internal static void OfferToSaveCommand(RunOptions options)
+    {
+        if (!PromptYesNo("Save this command for next time? [y/N]: "))
+            return;
+
+        CommandHistoryStore.Save(ToSavedCommand(options), CommandHistoryFilePathOverride);
+        Console.WriteLine("Saved.");
+    }
+
+    internal static RunOptions? PromptForOptions()
     {
         Console.WriteLine("projdump interactive mode (run with --help to see the non-interactive flags)");
         Console.WriteLine();
 
-        string inputPath = Prompt("Path to .sln/.slnx/.csproj, or a Vue project directory: ").Trim('"');
+        string inputPath = Prompt("Path to .sln/.slnx/.csproj, a directory, or a Vue project directory: ").Trim('"');
         if (string.IsNullOrWhiteSpace(inputPath))
         {
             PrintError("No path provided.");
             return null;
         }
 
-        string? customOutputPath = OrNull(Prompt("Output path (blank = alongside the project): "));
+        bool isSolutionInput = inputPath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) ||
+                                inputPath.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase);
+
+        string? customOutputPath = OrNull(Prompt("Output path (blank = your Desktop): "));
         bool slim = PromptYesNo("Slim mode - omit file contents? [y/N]: ");
         bool excludeTests = PromptYesNo("Exclude test files? [y/N]: ");
         string? scopeDir = OrNull(Prompt("Scope to a subdirectory (blank = whole project): "));
@@ -144,7 +244,17 @@ class Program
             ? []
             : excludeDirsInput.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         string? typeArg = OrNull(Prompt("Project type - csharp/vue (blank = auto-detect): "));
-        string? modeArg = OrNull(Prompt("Mode - default/webapi (blank = default): "));
+
+        string? modeArg;
+        if (isSolutionInput)
+        {
+            Console.WriteLine("Solution detected - mode applies per-project, so skipping that question.");
+            modeArg = null;
+        }
+        else
+        {
+            modeArg = OrNull(Prompt("Mode - default/webapi (blank = default): "));
+        }
 
         Console.WriteLine();
 
@@ -165,7 +275,7 @@ class Program
 
     static string? OrNull(string value) => value.Length > 0 ? value : null;
 
-    internal static void Execute(RunOptions options)
+    internal static bool Execute(RunOptions options)
     {
         string modeKey = options.ModeArg ?? "default";
 
@@ -191,7 +301,7 @@ class Program
         catch (ProjectAnalysisException ex)
         {
             PrintError(ex.Message);
-            return;
+            return false;
         }
 
         string modeSuffix = options.Slim ? "-slim" : "";
@@ -215,7 +325,7 @@ class Program
         }
         else
         {
-            outputPath = Path.Combine(analysis.RootDir.FullName, outputFileName);
+            outputPath = Path.Combine(ResolveDefaultOutputDirectory(analysis.RootDir), outputFileName);
         }
 
         var renderRequest = new ReportRenderRequest
@@ -245,6 +355,19 @@ class Program
         if (options.Slim) Console.Write("  (slim mode — run without --slim for full file contents)");
         Console.WriteLine();
         Console.ResetColor();
+
+        return true;
+    }
+
+    // Falls back to the project's own root directory if the Desktop can't be
+    // resolved (e.g. no Desktop special folder on the current platform).
+    static string ResolveDefaultOutputDirectory(DirectoryInfo projectRootDir)
+    {
+        if (DefaultOutputDirectoryOverride != null)
+            return DefaultOutputDirectoryOverride;
+
+        string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+        return string.IsNullOrEmpty(desktopPath) ? projectRootDir.FullName : desktopPath;
     }
 
     internal static string SanitizeForFileName(string name)

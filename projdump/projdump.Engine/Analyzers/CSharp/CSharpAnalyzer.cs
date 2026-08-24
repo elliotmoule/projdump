@@ -21,20 +21,27 @@ public sealed class CSharpAnalyzer : IProjectAnalyzer
 
     public bool CanHandle(string inputPath)
     {
+        if (Directory.Exists(inputPath))
+            return DirectoryContainsSolutionFile(inputPath);
+
         string extension = Path.GetExtension(inputPath).ToLower();
         return extension is ".sln" or ".slnx" or ".csproj";
     }
 
     public ProjectAnalysis Analyze(string inputPath, ProjectAnalysisOptions options)
     {
-        string extension = Path.GetExtension(inputPath).ToLower();
+        string resolvedInputPath = Directory.Exists(inputPath)
+            ? ResolveSolutionFileInDirectory(inputPath)
+            : inputPath;
+
+        string extension = Path.GetExtension(resolvedInputPath).ToLower();
         bool isValidExtension = extension == ".sln" || extension == ".slnx" || extension == ".csproj";
 
-        if (!File.Exists(inputPath) || !isValidExtension)
-            throw new ProjectAnalysisException($"'{inputPath}' is not a valid or existing .sln, .slnx, or .csproj file.");
+        if (!File.Exists(resolvedInputPath) || !isValidExtension)
+            throw new ProjectAnalysisException($"'{resolvedInputPath}' is not a valid or existing .sln, .slnx, or .csproj file.");
 
-        FileInfo inputFileInfo = new(inputPath);
-        DirectoryInfo? rootDir = inputFileInfo.Directory ?? throw new ProjectAnalysisException($"Could not resolve a parent directory for '{inputPath}'.");
+        FileInfo inputFileInfo = new(resolvedInputPath);
+        DirectoryInfo? rootDir = inputFileInfo.Directory ?? throw new ProjectAnalysisException($"Could not resolve a parent directory for '{resolvedInputPath}'.");
 
         // Apply --scope: restrict file discovery to a subdirectory
         if (options.ScopeDir != null)
@@ -104,5 +111,27 @@ public sealed class CSharpAnalyzer : IProjectAnalyzer
             ReadmeFiles = readmeFiles,
             ProjFiles = projFiles,
         };
+    }
+
+    static bool DirectoryContainsSolutionFile(string dirPath) =>
+        Directory.GetFiles(dirPath, "*.slnx", SearchOption.TopDirectoryOnly).Length > 0 ||
+        Directory.GetFiles(dirPath, "*.sln", SearchOption.TopDirectoryOnly).Length > 0;
+
+    // .slnx is preferred over .sln when both exist. Non-recursive - matches
+    // how VueProjectAnalyzer only looks for package.json directly in the
+    // given directory, not anywhere deeper in the tree.
+    static string ResolveSolutionFileInDirectory(string dirPath)
+    {
+        var slnxFiles = Directory.GetFiles(dirPath, "*.slnx", SearchOption.TopDirectoryOnly);
+        if (slnxFiles.Length == 1) return slnxFiles[0];
+        if (slnxFiles.Length > 1)
+            throw new ProjectAnalysisException($"Multiple .slnx files found in '{dirPath}'. Point directly at the one you want instead.");
+
+        var slnFiles = Directory.GetFiles(dirPath, "*.sln", SearchOption.TopDirectoryOnly);
+        if (slnFiles.Length == 1) return slnFiles[0];
+        if (slnFiles.Length > 1)
+            throw new ProjectAnalysisException($"Multiple .sln files found in '{dirPath}'. Point directly at the one you want instead.");
+
+        throw new ProjectAnalysisException($"No .sln or .slnx file found in '{dirPath}'.");
     }
 }

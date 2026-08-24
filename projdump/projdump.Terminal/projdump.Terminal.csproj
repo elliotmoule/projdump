@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\projdump.Engine\projdump.Engine.csproj" />
+    <ProjectReference Include="..\projdump.Shared\projdump.Shared.csproj" />
   </ItemGroup>
 
 </Project>

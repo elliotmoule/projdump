@@ -18,7 +18,7 @@ A .NET CLI tool that distils a C# solution/project or a Vue project into a singl
 
 ## What it does
 
-Point `projdump` at a C# solution/project or a Vue project and it produces a self-contained markdown document containing:
+Point `projdump` at a C# solution/project (or a folder containing one), or a Vue project, and it produces a self-contained markdown document containing:
 
 - **Project summary** — file extension breakdown table
 - **Project structure** — full relative file tree
@@ -42,6 +42,14 @@ Run with no arguments at all for **interactive mode** — it'll prompt you for t
 ```
 projdump
 ```
+
+A few things interactive mode does differently from the plain CLI flags:
+
+- **Offers to reuse a recent command first**, if you've saved any before.
+- **Skips the mode question for solutions.** Point it at a `.sln`/`.slnx` and `--mode` won't be asked, since a mode applies per-project and a solution usually spans more than one.
+- **Offers to save the command** once a run finishes successfully, so it shows up in the reuse list next time.
+
+Saved commands live in `<ApplicationData>/projdump/command-history.json` (`%APPDATA%\projdump\command-history.json` on Windows) as a plain, append-only JSON array — nothing is ever rotated or capped, it just grows for as long as you keep saving. When the file has entries, interactive mode asks upfront whether to reuse one, then lists them most-recent-first for you to pick from; answering no (or there being no file yet) falls through to the normal prompts.
 
 ### Options
 
@@ -83,7 +91,7 @@ projdump MyApp.Api.csproj --mode webapi
 projdump MyApp.Api.csproj --mode webapi --exclude-dir wwwroot
 ```
 
-The output filename is always `<project-name>-app-solution.md` or `<project-name>-app-project.md` (plus `-slim` if that flag is set) — the project name comes from the `.sln`/`.csproj` file name for C#, or the `name` field in `package.json` for Vue.
+The output filename is always `<project-name>-app-solution.md` or `<project-name>-app-project.md` (plus `-slim` if that flag is set) — the project name comes from the `.sln`/`.csproj` file name for C#, or the `name` field in `package.json` for Vue. If you don't give an output path, the report is written to your **Desktop** by default (falling back to the project's own folder if a Desktop folder can't be resolved on the current platform).
 
 ## How it works
 
@@ -112,12 +120,14 @@ If `--type` isn't given, `projdump` tries each supported project type in turn un
 flowchart TD
     A["Input path"] --> B{"--type specified?"}
     B -- Yes --> C["Use that analyzer"]
-    B -- No --> D{"Ends in .sln, .slnx,\nor .csproj?"}
+    B -- No --> D{"Ends in .sln/.slnx/.csproj, or a\ndirectory with a top-level .sln/.slnx?"}
     D -- Yes --> E["C# analyzer"]
     D -- No --> F{"Directory or package.json\ndeclaring a 'vue' dependency?"}
     F -- Yes --> G["Vue analyzer"]
     F -- No --> H["Error:\nspecify --type explicitly"]
 ```
+
+C# is checked first, so if a directory somehow contains both a solution file and a Vue `package.json` at the same level, the C# analyzer wins. Pointing at a directory only looks one level deep for a solution file (not recursively) — if there's more than one `.sln`/`.slnx` directly in it, that's ambiguous and `projdump` will ask you to point at the exact file instead of guessing.
 
 ## What gets excluded
 
@@ -148,7 +158,7 @@ cd projdump
 dotnet build
 ```
 
-Run directly (the solution has two projects, so `dotnet run` needs to know which one):
+Run directly (the solution has several projects, so `dotnet run` needs to know which one):
 
 ```bash
 dotnet run --project projdump.Terminal -- MyApp.sln
@@ -175,19 +185,22 @@ projdump.Engine/           # analysis, filtering, and rendering — no console I
   Analyzers/                # one folder per supported project type
   Modes/                    # report-focus filters (default, webapi)
   Rendering/                # markdown generation
+projdump.Shared/           # cross-cutting infra usable by any front end (command history)
 projdump.Terminal/         # the CLI shell — argument parsing, prompts, console output
 projdump.Engine.Tests/     # NUnit tests for projdump.Engine
+projdump.Shared.Tests/     # NUnit tests for projdump.Shared
 projdump.Terminal.Tests/   # NUnit tests for projdump.Terminal
 ```
 
-`projdump.Engine` has no dependency on the console — it's a plain class library, so a future GUI front end could reference it directly instead of `projdump.Terminal`.
+`projdump.Engine` has no dependency on the console — it's a plain class library, so a future GUI front end could reference it directly instead of `projdump.Terminal`. `projdump.Shared` follows the same idea for things a GUI would also want, like the saved-command history — it depends on nothing except the .NET base class library.
 
 ## Testing
 
-Two NUnit projects, one per assembly:
+Three NUnit projects, one per assembly:
 
 - `projdump.Engine.Tests` — classifiers, exclusion filters, the registry, modes, the renderer
-- `projdump.Terminal.Tests` — argument parsing, filename sanitization, and an end-to-end run through `Program.Execute`
+- `projdump.Shared.Tests` — command history load/save
+- `projdump.Terminal.Tests` — argument parsing, filename sanitization, the interactive prompt flow, and end-to-end runs through `Program.Execute`
 
 ```bash
 dotnet test
@@ -195,11 +208,13 @@ dotnet test
 
 Most of the suite is small, isolated unit tests with no file system involved — `FileInfo` objects built from plain strings, fake implementations of the internal filter/detector interfaces, that kind of thing. A smaller set are integration tests, used only where the code genuinely can't avoid touching disk: the renderer reads file content and size directly, the analyzers walk a real directory tree, and `Program.Execute` is the actual pipeline end to end. Those use a `TempProjectDirectory` helper (one per test project) that creates a unique temp folder and deletes it on `Dispose`, so `using var temp = new TempProjectDirectory();` at the top of a test guarantees cleanup even if an assertion fails partway through.
 
-A couple of things worth knowing if you're adding tests:
+A few things worth knowing if you're adding tests:
 
-- Most of what's tested (`CSharpFileClassifier`, the exclusion filters, `FormatHelpers`, etc.) is `internal`, not `public` — each engine/CLI project grants its test project access via `InternalsVisibleTo` rather than widening the public API just for testing.
-- Never pass a bare relative path (`new FileInfo("Foo.cs")`) into a path-segment check. It resolves against the test runner's working directory, typically a build output path like `bin/Debug/net10.0/`, which itself contains segments like `bin` that these filters look for — silent false positives depending on where the repo happens to live. Use `TestSupport/FakePaths.Combine(...)` in `projdump.Engine.Tests`, which anchors the path under the OS temp directory instead.
-- Interactive mode's actual prompt loop (`Console.ReadLine`) isn't covered — that would need `Console.In`/`Out` abstracted behind an interface, which felt like more surgery than the testing pass warranted. Worth a look if it becomes a priority.
+- Most of what's tested (`CSharpFileClassifier`, the exclusion filters, `FormatHelpers`, etc.) is `internal`, not `public` — each project grants its test project access via `InternalsVisibleTo` rather than widening the public API just for testing.
+- Never pass a bare relative path (`new FileInfo("Foo.cs")`) into a path-segment check. It resolves against the test runner's working directory, typically a build output path like `bin/Debug/net10.0/`, which itself contains segments like `bin` that these filters look for — silent false positives depending on where the repo happens to live. Use `TestSupport/FakePaths.Combine(...)` in `projdump.Engine.Tests`, which anchors the path under the OS temp directory instead — and make sure it's a genuinely *absolute* path, not just a relative one with an extra folder tacked on, since a relative path still inherits the CWD regardless of what you prepend to it.
+- Interactive mode's prompt flow (`PromptForOptions`, `TryUseSavedCommand`, `OfferToSaveCommand`) *is* covered, via a `ConsoleInputScope` helper in `projdump.Terminal.Tests` that scripts `Console.ReadLine()` answers for a test. One subtlety: `Console.ReadLine()` returns `null` (not an exception) once the scripted input runs out, so a test with too few queued answers can accidentally "pass" even when the code being tested is broken — queue a recognizable sentinel value as the next answer if you want to prove a question was genuinely *skipped* rather than just running out of input. What isn't covered is `RunInteractive`/`Main` as one integrated flow (reuse → prompt → execute → save) — each piece is tested individually instead.
+- Two features write outside the project being dumped: the Desktop-default output path, and the command history file under `%APPDATA%`. Both have a test-only static override on `Program` (`DefaultOutputDirectoryOverride`, `CommandHistoryFilePathOverride`) with a matching `IDisposable` scope class, so tests never touch your real Desktop or your real saved-command history.
+- Records with a collection-typed field (like `SavedCommand.ExcludeDirs`, typed `IReadOnlyList<string>`) can't be compared with `Is.EqualTo` across a serialization round-trip — the list is a new instance each time, and collection types don't override `Equals` for structural comparison, so record equality silently falls back to reference equality on that field. Compare fields individually instead, using `Is.EquivalentTo` for the collection field.
 
 ## Adding a new project type
 

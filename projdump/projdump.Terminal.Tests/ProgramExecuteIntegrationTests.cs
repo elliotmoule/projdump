@@ -9,6 +9,7 @@ public class ProgramExecuteIntegrationTests
     public void Execute_CSharpProject_WritesOutputFileWithProjectNameInFileName()
     {
         using var temp = new TempProjectDirectory();
+        using var outputScope = new DefaultOutputDirectoryOverrideScope(temp.RootPath);
         string csprojPath = temp.WriteFile("MyApp.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
         temp.WriteFile("Program.cs", "var builder = WebApplication.CreateBuilder(args);");
 
@@ -27,6 +28,7 @@ public class ProgramExecuteIntegrationTests
     public void Execute_SlimMode_AddsSlimSuffixToFileName_AndOmitsContent()
     {
         using var temp = new TempProjectDirectory();
+        using var outputScope = new DefaultOutputDirectoryOverrideScope(temp.RootPath);
         string csprojPath = temp.WriteFile("MyApp.csproj", "<Project></Project>");
         temp.WriteFile("Program.cs", "var builder = WebApplication.CreateBuilder(args);");
 
@@ -45,6 +47,7 @@ public class ProgramExecuteIntegrationTests
     public void Execute_VueProject_UsesPackageJsonNameInOutputFileName()
     {
         using var temp = new TempProjectDirectory();
+        using var outputScope = new DefaultOutputDirectoryOverrideScope(temp.RootPath);
         temp.WriteFile("package.json", """{ "name": "my-vue-app", "dependencies": { "vue": "^3.4.0" } }""");
         temp.WriteFile("main.js", "// entry");
 
@@ -58,6 +61,8 @@ public class ProgramExecuteIntegrationTests
     [Test]
     public void Execute_CustomOutputPath_WritesToSpecifiedFile()
     {
+        // No DefaultOutputDirectoryOverrideScope needed here - an explicit
+        // CustomOutputPath never reaches the default-resolution branch.
         using var temp = new TempProjectDirectory();
         string csprojPath = temp.WriteFile("MyApp.csproj", "<Project></Project>");
         temp.WriteFile("Program.cs", "// entry");
@@ -70,8 +75,29 @@ public class ProgramExecuteIntegrationTests
     }
 
     [Test]
+    public void Execute_NoCustomOutputPath_WritesToConfiguredDefaultDirectory()
+    {
+        // Proves the Desktop-default resolution actually routes through
+        // ResolveDefaultOutputDirectory / DefaultOutputDirectoryOverride,
+        // without writing to the real Desktop during a test run.
+        using var temp = new TempProjectDirectory();
+        string csprojPath = temp.WriteFile("MyApp.csproj", "<Project></Project>");
+        temp.WriteFile("Program.cs", "// entry");
+
+        string fakeDesktop = temp.GetFullPath("fake-desktop");
+        Directory.CreateDirectory(fakeDesktop);
+        using var outputScope = new DefaultOutputDirectoryOverrideScope(fakeDesktop);
+
+        var options = new Program.RunOptions(csprojPath, null, false, false, null, null, null, []);
+        Program.Execute(options);
+
+        Assert.That(File.Exists(Path.Combine(fakeDesktop, "MyApp-app-project.md")), Is.True);
+    }
+
+    [Test]
     public void Execute_InvalidPath_PrintsErrorAndWritesNoFile()
     {
+        // Errors out before output-path resolution is ever reached - no override needed.
         using var temp = new TempProjectDirectory();
         string invalidPath = temp.GetFullPath("does-not-exist.csproj");
         var options = new Program.RunOptions(invalidPath, null, false, false, null, null, null, []);
@@ -79,17 +105,15 @@ public class ProgramExecuteIntegrationTests
         using var console = new ConsoleCapture();
         Program.Execute(options);
 
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(console.Output, Does.Contain("Error:"));
-            Assert.That(Directory.GetFiles(temp.RootPath, "*.md"), Is.Empty);
-        }
+        Assert.That(console.Output, Does.Contain("Error:"));
+        Assert.That(Directory.GetFiles(temp.RootPath, "*.md"), Is.Empty);
     }
 
     [Test]
     public void Execute_WebApiMode_DropsComponentFiles_ButKeepsControllers()
     {
         using var temp = new TempProjectDirectory();
+        using var outputScope = new DefaultOutputDirectoryOverrideScope(temp.RootPath);
         string csprojPath = temp.WriteFile("MyApp.csproj", "<Project></Project>");
         temp.WriteFile("Program.cs", "// entry");
         temp.WriteFile(Path.Combine("Controllers", "OrdersController.cs"), "// controller");
@@ -106,7 +130,7 @@ public class ProgramExecuteIntegrationTests
     [Test]
     public void Execute_UnsupportedModeForType_PrintsErrorAndWritesNoFile()
     {
-        // Vue only supports "default" - webapi is C#-only.
+        // Vue only supports "default" - webapi is C#-only. Errors before output resolution.
         using var temp = new TempProjectDirectory();
         temp.WriteFile("package.json", """{ "name": "my-vue-app", "dependencies": { "vue": "^3.4.0" } }""");
         temp.WriteFile("main.js", "// entry");
@@ -116,11 +140,8 @@ public class ProgramExecuteIntegrationTests
         using var console = new ConsoleCapture();
         Program.Execute(options);
 
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(console.Output, Does.Contain("Error:"));
-            Assert.That(Directory.GetFiles(temp.RootPath, "*.md"), Is.Empty);
-        }
+        Assert.That(console.Output, Does.Contain("Error:"));
+        Assert.That(Directory.GetFiles(temp.RootPath, "*.md"), Is.Empty);
     }
 
     [Test]
@@ -131,6 +152,7 @@ public class ProgramExecuteIntegrationTests
         // mode, but hand-written wwwroot JS is a judgement call the user
         // gets to make (kept by default, droppable via --exclude-dir).
         using var temp = new TempProjectDirectory();
+        using var outputScope = new DefaultOutputDirectoryOverrideScope(temp.RootPath);
         string csprojPath = temp.WriteFile("MyApp.csproj", "<Project></Project>");
         temp.WriteFile("Program.cs", "// entry");
         temp.WriteFile(Path.Combine("wwwroot", "lib", "jquery.min.js"), "/* vendored, should vanish */");
@@ -154,6 +176,7 @@ public class ProgramExecuteIntegrationTests
     public void Execute_ExcludeDirFlag_DropsWwwrootEntirely()
     {
         using var temp = new TempProjectDirectory();
+        using var outputScope = new DefaultOutputDirectoryOverrideScope(temp.RootPath);
         string csprojPath = temp.WriteFile("MyApp.csproj", "<Project></Project>");
         temp.WriteFile("Program.cs", "// entry");
         temp.WriteFile(Path.Combine("wwwroot", "js", "site.js"), "// hand-written");
