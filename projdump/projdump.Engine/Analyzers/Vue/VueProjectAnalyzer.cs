@@ -81,13 +81,15 @@ public sealed class VueProjectAnalyzer : IProjectAnalyzer
             .Select(f => new FileEntry { File = f, Role = VueFileClassifier.AssignRole(f, TestFileDetector) })
             .ToList();
 
-        var readmeFiles = allFileInfos
-            .Where(f => f.Extension.Equals(".md", StringComparison.OrdinalIgnoreCase))
-            .Select(f => new FileEntry { File = f, Role = VueFileClassifier.AssignRole(f, TestFileDetector) })
-            .ToList();
+		var readmeFiles = allFileInfos
+			.Where(f => f.Extension.Equals(".md", StringComparison.OrdinalIgnoreCase))
+			.Select(f => new FileEntry { File = f, Role = VueFileClassifier.AssignRole(f, TestFileDetector) })
+			.ToList();
 
-        // Vue has no solution concept - always treated like C#'s "project" (non-solution) case.
-        var projFiles = new List<FileEntry> { new() { File = inputFileInfo, Role = FileRole.Build } };
+		AncestorReadmeLocator.AddNearestReadme(readmeFiles, inputFileInfo.Directory);
+
+		// Vue has no solution concept - always treated like C#'s "project" (non-solution) case.
+		var projFiles = new List<FileEntry> { new() { File = inputFileInfo, Role = FileRole.Build } };
 
         return new ProjectAnalysis
         {

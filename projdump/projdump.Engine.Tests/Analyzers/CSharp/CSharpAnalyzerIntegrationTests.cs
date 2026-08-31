@@ -20,7 +20,108 @@ public class CSharpAnalyzerIntegrationTests
         return temp.GetFullPath("MyApp.csproj");
     }
 
-    [Test]
+	// Mirrors a real repo layout - solution and README at the root, project a couple of levels down.
+	// The .git marker bounds the ancestor walk so it can't escape into the system temp folder.
+	static string BuildNestedProject(TempProjectDirectory temp, bool writeRootReadme = true)
+	{
+		Directory.CreateDirectory(temp.GetFullPath(".git"));
+		temp.WriteFile("MyApp.slnx", "<Solution />");
+		if (writeRootReadme)
+			temp.WriteFile("README.md", "# repo readme");
+
+		temp.WriteFile(Path.Combine("src", "MyApp.Api", "Program.cs"), "// entry point");
+		return temp.WriteFile(Path.Combine("src", "MyApp.Api", "MyApp.Api.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+	}
+
+	[Test]
+	public void Analyze_PullsInTheRepositoryReadme_WhenTheProjectHasNone()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildNestedProject(temp);
+
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+		Assert.That(analysis.ReadmeFiles.Select(f => f.File.FullName), Does.Contain(temp.GetFullPath("README.md")));
+	}
+
+	[Test]
+	public void Analyze_KeepsTheAncestorReadmeOutOfTheFileListing()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildNestedProject(temp);
+
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+		Assert.That(analysis.AllFiles.Select(f => f.File.Name), Does.Not.Contain("README.md"));
+	}
+
+	[Test]
+	public void Analyze_DoesNotSearchUpwards_WhenAReadmeSitsBesideTheProject()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildNestedProject(temp);
+		temp.WriteFile(Path.Combine("src", "MyApp.Api", "README.md"), "# project readme");
+
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+		var readmePaths = analysis.ReadmeFiles.Select(f => f.File.FullName).ToList();
+		Assert.That(readmePaths, Does.Contain(temp.GetFullPath(Path.Combine("src", "MyApp.Api", "README.md"))));
+		Assert.That(readmePaths, Does.Not.Contain(temp.GetFullPath("README.md")));
+	}
+
+	[Test]
+	public void Analyze_IncludesATextReadme_BesideTheProject()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildNestedProject(temp, writeRootReadme: false);
+		temp.WriteFile(Path.Combine("src", "MyApp.Api", "README.txt"), "project readme");
+
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+		// The recursive gather only collects .md, so this can only arrive via the readme merge.
+		Assert.That(analysis.ReadmeFiles.Select(f => f.File.Name), Does.Contain("README.txt"));
+	}
+
+	[Test]
+	public void Analyze_LeavesReadmeFilesEmpty_WhenNoneExistsAnywhere()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildNestedProject(temp, writeRootReadme: false);
+
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+		Assert.That(analysis.ReadmeFiles, Is.Empty);
+	}
+
+	[Test]
+	public void Analyze_SolutionInput_PullsInAReadmeFromAboveTheSolution()
+	{
+		using var temp = new TempProjectDirectory();
+		Directory.CreateDirectory(temp.GetFullPath(".git"));
+		temp.WriteFile("README.md", "# repo readme");
+		temp.WriteFile(Path.Combine("build", "MyApp.slnx"), "<Solution />");
+		temp.WriteFile(Path.Combine("build", "MyApp", "MyApp.csproj"), "<Project />");
+
+		var analysis = new CSharpAnalyzer().Analyze(temp.GetFullPath(Path.Combine("build", "MyApp.slnx")), new ProjectAnalysisOptions());
+
+		Assert.That(analysis.ReadmeFiles.Select(f => f.File.FullName), Does.Contain(temp.GetFullPath("README.md")));
+	}
+
+	[Test]
+	public void Analyze_WithScope_StillFindsTheReadmeBesideTheProject()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildNestedProject(temp, writeRootReadme: false);
+		temp.WriteFile(Path.Combine("src", "MyApp.Api", "README.md"), "# project readme");
+		temp.WriteFile(Path.Combine("src", "MyApp.Api", "Controllers", "OrdersController.cs"), "// controller");
+
+		// Scoping moves RootDir into Controllers, so the README is outside the gathered tree.
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions { ScopeDir = "Controllers" });
+
+		Assert.That(analysis.ReadmeFiles.Select(f => f.File.Name), Does.Contain("README.md"));
+	}
+
+	[Test]
     public void Analyze_ExcludesBinAndObjFolders()
     {
         using var temp = new TempProjectDirectory();

@@ -234,4 +234,53 @@ public class MarkdownReportRendererIntegrationTests
 
         Assert.That(output, Does.Not.Contain("## Configuration"));
     }
+
+	[Test]
+	public void Render_ExternalReadme_ShowsFullPathAndSourcedFromOutsideNote()
+	{
+		using var temp = new TempProjectDirectory();
+
+		// The README sits a level above RootDir, as the ancestor search would leave it.
+		string externalReadmePath = temp.WriteFile("README.md", "# repo readme");
+
+		string csprojPath = temp.WriteFile(Path.Combine("src", "MyApp.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+		string programPath = temp.WriteFile(Path.Combine("src", "Program.cs"), "var builder = WebApplication.CreateBuilder(args);");
+
+		var request = new ReportRenderRequest
+		{
+			InputFileInfo = new FileInfo(csprojPath),
+			RootDir = new DirectoryInfo(temp.GetFullPath("src")),
+			IsSolution = false,
+			Extension = ".csproj",
+			Slim = false,
+			ExcludeTests = false,
+			ScopeDir = null,
+			ExcludeDirs = [],
+			AllFiles = [new FileInfo(csprojPath), new FileInfo(programPath)],
+			CodeFiles = [new FileInfo(programPath)],
+			ConfigFiles = [],
+			ReadmeFiles = [new FileInfo(externalReadmePath)],
+			ProjFiles = [new FileInfo(csprojPath)],
+		};
+
+		var (output, _) = MarkdownReportRenderer.Render(request);
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(output, Does.Contain("Sourced from outside the project tree"));
+			Assert.That(output, Does.Contain(externalReadmePath));
+			Assert.That(output, Does.Contain("repo readme"));
+		}
+	}
+
+	[Test]
+	public void Render_InTreeReadme_HasNoSourcedFromOutsideNote()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
+
+		var (output, _) = MarkdownReportRenderer.Render(request);
+
+		Assert.That(output, Does.Not.Contain("Sourced from outside"));
+	}
 }

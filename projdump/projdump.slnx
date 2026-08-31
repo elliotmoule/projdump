@@ -2,10 +2,12 @@
   <Folder Name="/Solution Items/">
     <File Path="../README.md" />
   </Folder>
-  <Project Path="projdump.Engine.Tests/projdump.Engine.Tests.csproj" Id="e2615b02-126e-46b9-9ac4-3bc5a5099a30" />
+  <Folder Name="/Tests/">
+    <Project Path="projdump.Engine.Tests/projdump.Engine.Tests.csproj" Id="e2615b02-126e-46b9-9ac4-3bc5a5099a30" />
+    <Project Path="projdump.Shared.Tests/projdump.Shared.Tests.csproj" Id="2b116d14-186a-4c40-b9fc-3ec8a449c666" />
+    <Project Path="projdump.Terminal.Tests/projdump.Terminal.Tests.csproj" Id="140dead5-9dd2-4346-bc71-d94cf071f011" />
+  </Folder>
   <Project Path="projdump.Engine/projdump.Engine.csproj" Id="d088773c-beb7-4006-a807-ee2e1741a3af" />
-  <Project Path="projdump.Shared.Tests/projdump.Shared.Tests.csproj" Id="2b116d14-186a-4c40-b9fc-3ec8a449c666" />
   <Project Path="projdump.Shared/projdump.Shared.csproj" Id="6c645bba-25b7-4e9c-90c3-5a8bf0a60201" />
-  <Project Path="projdump.Terminal.Tests/projdump.Terminal.Tests.csproj" Id="140dead5-9dd2-4346-bc71-d94cf071f011" />
   <Project Path="projdump.Terminal/projdump.Terminal.csproj" />
 </Solution>

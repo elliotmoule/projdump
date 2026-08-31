@@ -58,26 +58,39 @@ public static class MarkdownReportRenderer
         sb.AppendLine("```");
         sb.AppendLine();
 
-        // README / Documentation
-        if (request.ReadmeFiles.Count > 0)
-        {
-            sb.AppendLine("## Documentation");
-            foreach (var file in request.ReadmeFiles)
-            {
-                string relativePath = Path.GetRelativePath(request.RootDir.FullName, file.FullName);
-                sb.AppendLine($"### {file.Name}");
-                sb.AppendLine($"**Path:** `{relativePath}`");
-                sb.AppendLine();
-                if (request.Slim)
-                    sb.AppendLine($"_File size: {FormatHelpers.FormatFileSize(file.Length)}_");
-                else
-                    sb.AppendLine(File.ReadAllText(file.FullName).Trim());
-                sb.AppendLine();
-            }
-        }
+		// README / Documentation
+		if (request.ReadmeFiles.Count > 0)
+		{
+			sb.AppendLine("## Documentation");
+			foreach (var file in request.ReadmeFiles)
+			{
+				string relativePath = Path.GetRelativePath(request.RootDir.FullName, file.FullName);
 
-        // Solution Configuration
-        if (request.IsSolution)
+				// A relative path that climbs out of the root means the file was pulled in from
+				// an ancestor directory, so it isn't part of the project's own file listing.
+				bool isOutsideProject = relativePath.StartsWith("..", StringComparison.Ordinal);
+
+				sb.AppendLine($"### {file.Name}");
+				sb.AppendLine($"**Path:** `{(isOutsideProject ? file.FullName : relativePath)}`");
+				sb.AppendLine();
+
+				if (isOutsideProject)
+				{
+					sb.AppendLine("> **Sourced from outside the project tree.** Found by searching parent directories for a README; it is not included in the file listing or extension counts above.");
+					sb.AppendLine();
+				}
+
+				if (request.Slim)
+					sb.AppendLine($"_File size: {FormatHelpers.FormatFileSize(file.Length)}_");
+				else
+					sb.AppendLine(File.ReadAllText(file.FullName).Trim());
+
+				sb.AppendLine();
+			}
+		}
+
+		// Solution Configuration
+		if (request.IsSolution)
         {
             sb.AppendLine("## Solution Configuration");
             string slnLang = request.Extension == ".slnx" ? "xml" : "text";

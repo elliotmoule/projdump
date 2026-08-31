@@ -21,7 +21,36 @@ public class VueProjectAnalyzerIntegrationTests
         temp.WriteFile(Path.Combine("dist", "index.html"), "junk");
     }
 
-    [Test]
+	[Test]
+	public void Analyze_PullsInTheRepositoryReadme_WhenThePackageHasNone()
+	{
+		using var temp = new TempProjectDirectory();
+		Directory.CreateDirectory(temp.GetFullPath(".git"));
+		temp.WriteFile("README.md", "# repo readme");
+		temp.WriteFile(Path.Combine("frontend", "package.json"), VuePackageJson);
+		temp.WriteFile(Path.Combine("frontend", "main.js"), "// entry point");
+
+		var analysis = new VueProjectAnalyzer().Analyze(temp.GetFullPath("frontend"), new ProjectAnalysisOptions());
+
+		Assert.That(analysis.ReadmeFiles.Select(f => f.File.FullName), Does.Contain(temp.GetFullPath("README.md")));
+		Assert.That(analysis.AllFiles.Select(f => f.File.Name), Does.Not.Contain("README.md"));
+	}
+
+	[Test]
+	public void Analyze_DoesNotSearchUpwards_WhenAReadmeSitsBesideThePackage()
+	{
+		using var temp = new TempProjectDirectory();
+		Directory.CreateDirectory(temp.GetFullPath(".git"));
+		temp.WriteFile("README.md", "# repo readme");
+		temp.WriteFile(Path.Combine("frontend", "package.json"), VuePackageJson);
+		temp.WriteFile(Path.Combine("frontend", "README.md"), "# frontend readme");
+
+		var analysis = new VueProjectAnalyzer().Analyze(temp.GetFullPath("frontend"), new ProjectAnalysisOptions());
+
+		Assert.That(analysis.ReadmeFiles.Select(f => f.File.FullName), Does.Not.Contain(temp.GetFullPath("README.md")));
+	}
+
+	[Test]
     public void CanHandle_ReturnsTrue_ForDirectoryWithVuePackageJson()
     {
         using var temp = new TempProjectDirectory();

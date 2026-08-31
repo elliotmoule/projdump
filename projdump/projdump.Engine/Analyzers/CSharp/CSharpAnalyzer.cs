@@ -85,12 +85,16 @@ public sealed class CSharpAnalyzer : IProjectAnalyzer
             .Select(f => new FileEntry { File = f, Role = CSharpFileClassifier.AssignRole(f, TestFileDetector) })
             .ToList();
 
-        var readmeFiles = allFileInfos
-            .Where(f => f.Extension.Equals(".md", StringComparison.OrdinalIgnoreCase))
-            .Select(f => new FileEntry { File = f, Role = CSharpFileClassifier.AssignRole(f, TestFileDetector) })
-            .ToList();
+		var readmeFiles = allFileInfos
+			.Where(f => f.Extension.Equals(".md", StringComparison.OrdinalIgnoreCase))
+			.Select(f => new FileEntry { File = f, Role = CSharpFileClassifier.AssignRole(f, TestFileDetector) })
+			.ToList();
 
-        var projFileInfos = isSolution
+		// A README often sits above the solution or project rather than beside it. Searching from
+		// the input file's own directory keeps --scope from skewing where the walk starts.
+		AncestorReadmeLocator.AddNearestReadme(readmeFiles, inputFileInfo.Directory);
+
+		var projFileInfos = isSolution
             ? allFileInfos.Where(f => f.Extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase)).ToList()
             : [inputFileInfo];
 

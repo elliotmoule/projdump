@@ -17,8 +17,17 @@ class Program
         string? ModeArg,
         IReadOnlyList<string> ExcludeDirs);
 
-    // Test-only override point - if set, used instead of resolving the real Desktop folder.
-    internal static string? DefaultOutputDirectoryOverride;
+	internal enum RecentMenuAction { RunSelected, EnterNewCommand, Quit }
+
+	internal sealed record RecentMenuResult(RecentMenuAction Action, RunOptions? Options);
+
+	internal sealed record ExecutionResult(bool Success, string? SolutionName, string? ProjectName)
+	{
+		public static readonly ExecutionResult Failed = new(false, null, null);
+	}
+
+	// Test-only override point - if set, used instead of resolving the real Desktop folder.
+	internal static string? DefaultOutputDirectoryOverride;
 
     // Test-only override point - if set, used instead of the real %APPDATA% history file.
     internal static string? CommandHistoryFilePathOverride;
@@ -78,18 +87,32 @@ class Program
         Execute(options);
     }
 
-    static void RunInteractive()
-    {
-        RunOptions? options = TryUseSavedCommand() ?? PromptForOptions();
-        if (options == null) return;
+	static void RunInteractive()
+	{
+		Console.WriteLine("projdump interactive mode (run with --help to see the non-interactive flags)");
+		Console.WriteLine();
 
-        bool success = Execute(options);
+		while (true)
+		{
+			RecentMenuResult menu = ShowRecentCommands();
+			if (menu.Action == RecentMenuAction.Quit)
+				return;
 
-        if (success)
-            OfferToSaveCommand(options);
-    }
+			bool reusedFromHistory = menu.Action == RecentMenuAction.RunSelected;
 
-    internal static RunOptions? ParseArgs(string[] args)
+			RunOptions? options = reusedFromHistory ? menu.Options : PromptForOptions();
+			if (options == null)
+				return; // A blank path at the fresh-command prompt is the way out when history is empty.
+
+			ExecutionResult result = Execute(options);
+			if (result.Success)
+				RecordCommandUse(options, result, offerToSave: !reusedFromHistory);
+
+			Console.WriteLine();
+		}
+	}
+
+	internal static RunOptions? ParseArgs(string[] args)
     {
         bool slim = false;
         bool excludeTests = false;
@@ -153,44 +176,100 @@ class Program
             ExcludeDirs: excludeDirs);
     }
 
-    internal static RunOptions? TryUseSavedCommand()
-    {
-        var history = CommandHistoryStore.Load(CommandHistoryFilePathOverride);
-        if (history.Count == 0)
-            return null;
+	/// <summary>
+	/// Lists recently used commands and asks which one to run.
+	/// </summary>
+	/// <returns>The chosen command, or a request to enter a new one or quit.</returns>
+	internal static RecentMenuResult ShowRecentCommands()
+	{
+		var history = CommandHistoryStore.Load(CommandHistoryFilePathOverride);
+		if (history.Count == 0)
+			return new RecentMenuResult(RecentMenuAction.EnterNewCommand, null);
 
-        if (!PromptYesNo("Use a recently executed command? [y/N]: "))
-            return null;
+		Console.WriteLine("Recently used commands:");
+		Console.WriteLine();
+		for (int position = 1; position <= history.Count; position++)
+			WriteRecentCommandLine(position, history[position - 1]);
+		Console.WriteLine();
 
-        var ordered = history.OrderByDescending(c => c.SavedAt).ToList();
+		string choice = Prompt($"Pick a command (1-{history.Count}, blank = new command, q = quit): ");
+		Console.WriteLine();
 
-        Console.WriteLine();
-        for (int i = 0; i < ordered.Count; i++)
-            Console.WriteLine($"  {i + 1}. [{ordered[i].SavedAt.ToLocalTime():yyyy-MM-dd HH:mm}] {DescribeCommand(ordered[i])}");
-        Console.WriteLine();
+		if (choice.Equals("q", StringComparison.OrdinalIgnoreCase))
+			return new RecentMenuResult(RecentMenuAction.Quit, null);
 
-        string choice = Prompt($"Pick a command (1-{ordered.Count}, blank = start fresh): ");
-        if (!int.TryParse(choice, out int index) || index < 1 || index > ordered.Count)
-            return null;
+		return int.TryParse(choice, out int index) && index >= 1 && index <= history.Count
+			? new RecentMenuResult(RecentMenuAction.RunSelected, ToRunOptions(history[index - 1]))
+			: new RecentMenuResult(RecentMenuAction.EnterNewCommand, null);
+	}
 
-        Console.WriteLine();
-        return ToRunOptions(ordered[index - 1]);
-    }
+	static void WriteRecentCommandLine(int position, SavedCommand command)
+	{
+		var (solutionName, projectName) = ResolveMenuNames(command);
 
-    static string DescribeCommand(SavedCommand cmd)
-    {
-        var parts = new List<string> { cmd.InputPath };
-        if (cmd.CustomOutputPath != null) parts.Add($"output={cmd.CustomOutputPath}");
-        if (cmd.Slim) parts.Add("slim");
-        if (cmd.ExcludeTests) parts.Add("exclude-tests");
-        if (cmd.ScopeDir != null) parts.Add($"scope={cmd.ScopeDir}");
-        if (cmd.ExcludeDirs.Count > 0) parts.Add($"exclude-dir={string.Join(",", cmd.ExcludeDirs)}");
-        if (cmd.TypeArg != null) parts.Add($"type={cmd.TypeArg}");
-        if (cmd.ModeArg != null) parts.Add($"mode={cmd.ModeArg}");
-        return string.Join(" | ", parts);
-    }
+		WriteColored($"  {position}. ", ConsoleColor.Red);
+		Console.Write($"[{command.SavedAt.ToLocalTime():yyyy-MM-dd HH:mm}] ");
 
-    internal static SavedCommand ToSavedCommand(RunOptions options) => new(
+		if (solutionName != null)
+			WriteColored(solutionName, ConsoleColor.DarkYellow);
+		if (solutionName != null && projectName != null)
+			Console.Write("/");
+		if (projectName != null)
+			WriteColored(projectName, ConsoleColor.Yellow);
+
+		string flags = FormatFlags(command);
+		if (flags.Length > 0)
+		{
+			Console.Write(" | ");
+			WriteColored(flags, ConsoleColor.Green);
+		}
+
+		if (command.CustomOutputPath != null)
+		{
+			Console.Write(" | ");
+			WriteColored(command.CustomOutputPath, ConsoleColor.Cyan);
+		}
+
+		Console.WriteLine();
+	}
+
+	static void WriteColored(string text, ConsoleColor color)
+	{
+		Console.ForegroundColor = color;
+		Console.Write(text);
+		Console.ResetColor();
+	}
+
+	static string FormatFlags(SavedCommand command)
+	{
+		var flags = new List<string>();
+		if (command.Slim) flags.Add("--slim");
+		if (command.ExcludeTests) flags.Add("--exclude-tests");
+		if (command.ScopeDir != null) flags.Add($"--scope {command.ScopeDir}");
+		foreach (string excludedDir in command.ExcludeDirs) flags.Add($"--exclude-dir {excludedDir}");
+		if (command.TypeArg != null) flags.Add($"--type {command.TypeArg}");
+		if (command.ModeArg != null) flags.Add($"--mode {command.ModeArg}");
+		return string.Join(" ", flags);
+	}
+
+	static (string? SolutionName, string? ProjectName) ResolveMenuNames(SavedCommand command)
+	{
+		if (command.SolutionName != null || command.ProjectName != null)
+			return (command.SolutionName, command.ProjectName);
+
+		// History entries saved before display names were stored - fall back to the input path.
+		string trimmedPath = command.InputPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		string fallbackName = Path.GetFileNameWithoutExtension(trimmedPath);
+		if (string.IsNullOrEmpty(fallbackName))
+			fallbackName = trimmedPath;
+
+		bool looksLikeSolution = trimmedPath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
+								 || trimmedPath.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase);
+
+		return looksLikeSolution ? (fallbackName, null) : (null, fallbackName);
+	}
+
+	internal static SavedCommand ToSavedCommand(RunOptions options) => new(
         DateTimeOffset.Now,
         options.InputPath,
         options.CustomOutputPath,
@@ -211,24 +290,42 @@ class Program
         cmd.ModeArg,
         cmd.ExcludeDirs);
 
-    internal static void OfferToSaveCommand(RunOptions options)
+	/// <summary>
+	/// Promotes a command to the top of the recently used list, asking first only when it is
+	/// genuinely new. Reused and already-stored commands are promoted silently.
+	/// </summary>
+	/// <param name="options">The command that was just run.</param>
+	/// <param name="result">The execution result carrying the resolved display names.</param>
+	/// <param name="offerToSave">False when the command came straight from the recent list.</param>
+	internal static void RecordCommandUse(RunOptions options, ExecutionResult result, bool offerToSave)
+	{
+		SavedCommand command = ToSavedCommand(options, result.SolutionName, result.ProjectName);
+		bool alreadyInHistory = CommandHistoryStore.FindMatch(command, CommandHistoryFilePathOverride) != null;
+
+		if (offerToSave && !alreadyInHistory && !PromptYesNo("Save this command for next time? [y/N]: "))
+			return;
+
+		CommandHistoryStore.RecordUse(command, CommandHistoryFilePathOverride);
+	}
+
+	internal static SavedCommand ToSavedCommand(RunOptions options, string? solutionName = null, string? projectName = null) => new(
+		DateTimeOffset.Now,
+		options.InputPath,
+		options.CustomOutputPath,
+		options.Slim,
+		options.ExcludeTests,
+		options.ScopeDir,
+		options.TypeArg,
+		options.ModeArg,
+		options.ExcludeDirs,
+		solutionName,
+		projectName);
+
+	internal static RunOptions? PromptForOptions()
     {
-        if (!PromptYesNo("Save this command for next time? [y/N]: "))
-            return;
-
-        CommandHistoryStore.Save(ToSavedCommand(options), CommandHistoryFilePathOverride);
-        Console.WriteLine("Saved.");
-    }
-
-    internal static RunOptions? PromptForOptions()
-    {
-        Console.WriteLine("projdump interactive mode (run with --help to see the non-interactive flags)");
-        Console.WriteLine();
-
         string inputPath = Prompt("Path to .sln/.slnx/.csproj, a directory, or a Vue project directory: ").Trim('"');
         if (string.IsNullOrWhiteSpace(inputPath))
         {
-            PrintError("No path provided.");
             return null;
         }
 
@@ -275,7 +372,7 @@ class Program
 
     static string? OrNull(string value) => value.Length > 0 ? value : null;
 
-    internal static bool Execute(RunOptions options)
+    internal static ExecutionResult Execute(RunOptions options)
     {
         string modeKey = options.ModeArg ?? "default";
 
@@ -298,13 +395,13 @@ class Program
             };
             analysis = mode.Apply(analysis);
         }
-        catch (ProjectAnalysisException ex)
-        {
-            PrintError(ex.Message);
-            return false;
-        }
+		catch (ProjectAnalysisException ex)
+		{
+			PrintError(ex.Message);
+			return ExecutionResult.Failed;
+		}
 
-        string modeSuffix = options.Slim ? "-slim" : "";
+		string modeSuffix = options.Slim ? "-slim" : "";
         string projectKind = analysis.IsSolution ? "app-solution" : "app-project";
         string outputFileName = $"{SanitizeForFileName(analysis.ProjectName)}-{projectKind}{modeSuffix}.md";
 
@@ -356,12 +453,88 @@ class Program
         Console.WriteLine();
         Console.ResetColor();
 
-        return true;
-    }
+		var (solutionName, projectName) = ResolveDisplayNames(analysis);
+		return new ExecutionResult(true, solutionName, projectName);
+	}
 
-    // Falls back to the project's own root directory if the Desktop can't be
-    // resolved (e.g. no Desktop special folder on the current platform).
-    static string ResolveDefaultOutputDirectory(DirectoryInfo projectRootDir)
+	// Vue has no solution concept, so the folder holding package.json stands in for one.
+	// InputFileInfo is used rather than RootDir because --scope reassigns RootDir.
+	static (string? SolutionName, string? ProjectName) ResolveDisplayNames(ProjectAnalysis analysis)
+	{
+		if (analysis.IsSolution)
+			return (analysis.ProjectName, null);
+
+		bool isVueProject = analysis.Extension.Equals(".json", StringComparison.OrdinalIgnoreCase);
+		if (isVueProject)
+		{
+			string? containingFolderName = analysis.InputFileInfo.Directory?.Name;
+			bool nameMatchesFolder = string.Equals(containingFolderName, analysis.ProjectName, StringComparison.OrdinalIgnoreCase);
+
+			return nameMatchesFolder
+				? (containingFolderName, null)
+				: (containingFolderName, analysis.ProjectName);
+		}
+
+		return (FindOwningSolutionName(analysis.InputFileInfo.Directory), analysis.ProjectName);
+	}
+
+	/// <summary>
+	/// Looks for the solution a project belongs to by searching its ancestor directories.
+	/// </summary>
+	/// <param name="projectDir">The directory containing the project file.</param>
+	/// <returns>The solution file name without its extension, or null when none is found nearby.</returns>
+	static string? FindOwningSolutionName(DirectoryInfo? projectDir)
+	{
+		DirectoryInfo? currentDir = projectDir;
+
+		for (int level = 0; level <= AncestorReadmeLocator.MaxSearchDepth && currentDir != null; level++)
+		{
+			string? solutionName = FindSolutionNameInDirectory(currentDir);
+			if (solutionName != null)
+				return solutionName;
+
+			// Matches the readme walk: a repository root is as far up as a project's context goes.
+			if (IsRepositoryRoot(currentDir))
+				return null;
+
+			currentDir = currentDir.Parent;
+		}
+
+		return null;
+	}
+
+	static string? FindSolutionNameInDirectory(DirectoryInfo dir)
+	{
+		if (!dir.Exists)
+			return null;
+
+		try
+		{
+			FileInfo? solutionFile = dir
+				.EnumerateFiles("*.sln*", SearchOption.TopDirectoryOnly)
+				.Where(file => file.Extension.Equals(".sln", StringComparison.OrdinalIgnoreCase)
+							|| file.Extension.Equals(".slnx", StringComparison.OrdinalIgnoreCase))
+				.OrderBy(file => file.Name, StringComparer.OrdinalIgnoreCase)
+				.FirstOrDefault();
+
+			return solutionFile == null ? null : Path.GetFileNameWithoutExtension(solutionFile.Name);
+		}
+		catch (UnauthorizedAccessException)
+		{
+			return null;
+		}
+	}
+
+	// Worktrees and submodules use a .git file rather than a directory, so both count.
+	static bool IsRepositoryRoot(DirectoryInfo dir)
+	{
+		string gitPath = Path.Combine(dir.FullName, ".git");
+		return Directory.Exists(gitPath) || File.Exists(gitPath);
+	}
+
+	// Falls back to the project's own root directory if the Desktop can't be
+	// resolved (e.g. no Desktop special folder on the current platform).
+	static string ResolveDefaultOutputDirectory(DirectoryInfo projectRootDir)
     {
         if (DefaultOutputDirectoryOverride != null)
             return DefaultOutputDirectoryOverride;
