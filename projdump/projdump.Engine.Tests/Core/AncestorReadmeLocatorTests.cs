@@ -19,7 +19,7 @@ public class AncestorReadmeLocatorTests
 		MarkAsRepositoryRoot(temp);
 		temp.WriteFile(Path.Combine("src", "MyApp", "README.md"), "# project readme");
 
-		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath(Path.Combine("src", "MyApp"))));
+		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath(Path.Combine("src", "MyApp"))), searchAncestors: true);
 
 		Assert.That(readme, Is.Not.Null);
 		Assert.That(readme!.Name, Is.EqualTo("README.md"));
@@ -33,7 +33,7 @@ public class AncestorReadmeLocatorTests
 		temp.WriteFile("README.txt", "text");
 		temp.WriteFile("README.md", "markdown");
 
-		var readme = AncestorReadmeLocator.Find(temp.RootDirectoryInfo);
+		var readme = AncestorReadmeLocator.Find(temp.RootDirectoryInfo, searchAncestors: true);
 
 		Assert.That(readme!.Name, Is.EqualTo("README.md"));
 	}
@@ -45,7 +45,7 @@ public class AncestorReadmeLocatorTests
 		MarkAsRepositoryRoot(temp);
 		temp.WriteFile("README.txt", "text");
 
-		var readme = AncestorReadmeLocator.Find(temp.RootDirectoryInfo);
+		var readme = AncestorReadmeLocator.Find(temp.RootDirectoryInfo, searchAncestors: true);
 
 		Assert.That(readme!.Name, Is.EqualTo("README.txt"));
 	}
@@ -59,7 +59,7 @@ public class AncestorReadmeLocatorTests
 		MarkAsRepositoryRoot(temp);
 		temp.WriteFile(fileName, "# readme");
 
-		var readme = AncestorReadmeLocator.Find(temp.RootDirectoryInfo);
+		var readme = AncestorReadmeLocator.Find(temp.RootDirectoryInfo, searchAncestors: true);
 
 		Assert.That(readme, Is.Not.Null);
 	}
@@ -72,7 +72,7 @@ public class AncestorReadmeLocatorTests
 		temp.WriteFile("README.md", "# repo readme");
 		temp.WriteFile(Path.Combine("src", "MyApp", "MyApp.csproj"), "<Project />");
 
-		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath(Path.Combine("src", "MyApp"))));
+		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath(Path.Combine("src", "MyApp"))), searchAncestors: true);
 
 		Assert.That(readme!.FullName, Is.EqualTo(temp.GetFullPath("README.md")));
 	}
@@ -85,7 +85,7 @@ public class AncestorReadmeLocatorTests
 		temp.WriteFile("README.md", "# repo readme");
 		temp.WriteFile(Path.Combine("src", "README.md"), "# src readme");
 
-		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath(Path.Combine("src", "MyApp"))));
+		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath(Path.Combine("src", "MyApp"))), searchAncestors: true);
 
 		Assert.That(readme!.FullName, Is.EqualTo(temp.GetFullPath(Path.Combine("src", "README.md"))));
 	}
@@ -98,7 +98,7 @@ public class AncestorReadmeLocatorTests
 		temp.WriteFile("README.md", "# repo readme");
 
 		// The .git folder and the README share a directory - the stop must not pre-empt the check.
-		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath("src")));
+		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath("src")), searchAncestors: true);
 
 		Assert.That(readme!.FullName, Is.EqualTo(temp.GetFullPath("README.md")));
 	}
@@ -112,7 +112,7 @@ public class AncestorReadmeLocatorTests
 		Directory.CreateDirectory(temp.GetFullPath(Path.Combine("repo", ".git")));
 		Directory.CreateDirectory(temp.GetFullPath(Path.Combine("repo", "src")));
 
-		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath(Path.Combine("repo", "src"))));
+		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath(Path.Combine("repo", "src"))), searchAncestors: true);
 
 		Assert.That(readme, Is.Null);
 	}
@@ -126,7 +126,7 @@ public class AncestorReadmeLocatorTests
 		temp.WriteFile(Path.Combine("repo", ".git"), "gitdir: ../.git/worktrees/repo");
 		Directory.CreateDirectory(temp.GetFullPath(Path.Combine("repo", "src")));
 
-		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath(Path.Combine("repo", "src"))));
+		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(temp.GetFullPath(Path.Combine("repo", "src"))), searchAncestors: true);
 
 		Assert.That(readme, Is.Null);
 	}
@@ -144,15 +144,16 @@ public class AncestorReadmeLocatorTests
 		string deepPath = temp.GetFullPath(Path.Combine(levels));
 		Directory.CreateDirectory(deepPath);
 
-		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(deepPath));
+		var readme = AncestorReadmeLocator.Find(new DirectoryInfo(deepPath), searchAncestors: true);
 
 		Assert.That(readme, Is.Null);
 	}
 
-	[Test]
-	public void Find_ReturnsNull_WhenStartingDirectoryIsNull()
+	[TestCase(true)]
+	[TestCase(false)]
+	public void Find_ReturnsNull_WhenStartingDirectoryIsNull(bool searchAncestors)
 	{
-		Assert.That(AncestorReadmeLocator.Find(null), Is.Null);
+		Assert.That(AncestorReadmeLocator.Find(null, searchAncestors), Is.Null);
 	}
 
 	[Test]
@@ -164,7 +165,7 @@ public class AncestorReadmeLocatorTests
 		string notesPath = temp.WriteFile(Path.Combine("src", "MyApp", "docs", "notes.md"), "# notes");
 
 		var readmeFiles = new List<FileEntry> { new() { File = new FileInfo(notesPath), Role = FileRole.Doc } };
-		AncestorReadmeLocator.AddNearestReadme(readmeFiles, new DirectoryInfo(temp.GetFullPath(Path.Combine("src", "MyApp"))));
+		AncestorReadmeLocator.AddNearestReadme(readmeFiles, new DirectoryInfo(temp.GetFullPath(Path.Combine("src", "MyApp"))), searchAncestors: true);
 
 		Assert.That(readmeFiles.Select(entry => entry.File.Name), Is.EqualTo(new[] { "README.md", "notes.md" }));
 	}
@@ -177,7 +178,7 @@ public class AncestorReadmeLocatorTests
 		string readmePath = temp.WriteFile("README.md", "# repo readme");
 
 		var readmeFiles = new List<FileEntry> { new() { File = new FileInfo(readmePath), Role = FileRole.Doc } };
-		AncestorReadmeLocator.AddNearestReadme(readmeFiles, temp.RootDirectoryInfo);
+		AncestorReadmeLocator.AddNearestReadme(readmeFiles, temp.RootDirectoryInfo, searchAncestors: true);
 
 		Assert.That(readmeFiles, Has.Count.EqualTo(1));
 	}
@@ -189,8 +190,52 @@ public class AncestorReadmeLocatorTests
 		MarkAsRepositoryRoot(temp);
 
 		var readmeFiles = new List<FileEntry>();
-		AncestorReadmeLocator.AddNearestReadme(readmeFiles, temp.RootDirectoryInfo);
+		AncestorReadmeLocator.AddNearestReadme(readmeFiles, temp.RootDirectoryInfo, searchAncestors: true);
 
 		Assert.That(readmeFiles, Is.Empty);
+	}
+
+	[Test]
+	public void Find_WithoutTheSwitch_StillReturnsAnAdjacentReadme()
+	{
+		using var temp = new TempProjectDirectory();
+		MarkAsRepositoryRoot(temp);
+		temp.WriteFile(Path.Combine("src", "MyApp", "README.md"), "# project readme");
+
+		var readme = AncestorReadmeLocator.Find(
+			new DirectoryInfo(temp.GetFullPath(Path.Combine("src", "MyApp"))),
+			searchAncestors: false);
+
+		Assert.That(readme, Is.Not.Null);
+	}
+
+	[Test]
+	public void Find_WithoutTheSwitch_DoesNotClimbToAnAncestorReadme()
+	{
+		using var temp = new TempProjectDirectory();
+		MarkAsRepositoryRoot(temp);
+		temp.WriteFile("README.md", "# repo readme");
+		Directory.CreateDirectory(temp.GetFullPath(Path.Combine("src", "MyApp")));
+
+		var readme = AncestorReadmeLocator.Find(
+			new DirectoryInfo(temp.GetFullPath(Path.Combine("src", "MyApp"))),
+			searchAncestors: false);
+
+		Assert.That(readme, Is.Null);
+	}
+
+	[Test]
+	public void Find_WithTheSwitch_DoesNotClimbAboveAProjectAtTheRepositoryRoot()
+	{
+		using var temp = new TempProjectDirectory();
+		temp.WriteFile("README.md", "# outside the repo");
+		Directory.CreateDirectory(temp.GetFullPath(Path.Combine("repo", ".git")));
+
+		// The project sits at the repo root itself, so the walk must not start.
+		var readme = AncestorReadmeLocator.Find(
+			new DirectoryInfo(temp.GetFullPath("repo")),
+			searchAncestors: true);
+
+		Assert.That(readme, Is.Null);
 	}
 }

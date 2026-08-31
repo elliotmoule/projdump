@@ -160,4 +160,20 @@ public class ProgramParseArgsTests
             Assert.That(options.ModeArg, Is.EqualTo("webapi"));
         }
     }
+
+	[Test]
+	public void ParseArgs_FindReadme_SetsSearchReadme()
+	{
+		var options = Program.ParseArgs(["MyApp.sln", "--find-readme"]);
+
+		Assert.That(options!.SearchReadme, Is.True);
+	}
+
+	[Test]
+	public void ParseArgs_WithoutFindReadme_LeavesSearchReadmeOff()
+	{
+		var options = Program.ParseArgs(["MyApp.sln"]);
+
+		Assert.That(options!.SearchReadme, Is.False);
+	}
 }

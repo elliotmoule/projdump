@@ -13,6 +13,7 @@ public class ProgramPromptForOptionsTests
             "",             // output
             "n",            // slim
             "n",            // exclude-tests
+            "n",            // find-readme
             "",             // scope
             "",             // exclude-dirs
             "",             // type
@@ -40,7 +41,8 @@ public class ProgramPromptForOptionsTests
             "",                     // output
             "n",                    // slim
             "n",                    // exclude-tests
-            "",                     // scope
+			"n",                    // find-readme
+			"",                     // scope
             "",                     // exclude-dirs
             "",                     // type
             "SHOULD-NOT-BE-READ");  // would be consumed as mode if not skipped
@@ -53,7 +55,7 @@ public class ProgramPromptForOptionsTests
     [Test]
     public void PromptForOptions_SolutionInput_PrintsSkipNotice()
     {
-        using var input = new ConsoleInputScope("MyApp.sln", "", "n", "n", "", "", "");
+        using var input = new ConsoleInputScope("MyApp.sln", "", "n", "n", "n", "", "", "");
         using var console = new ConsoleCapture();
 
         Program.PromptForOptions();
@@ -74,7 +76,7 @@ public class ProgramPromptForOptionsTests
     [Test]
     public void PromptForOptions_YesVariants_SetBooleanFlags()
     {
-        using var input = new ConsoleInputScope("MyApp.sln", "", "yes", "y", "", "", "");
+        using var input = new ConsoleInputScope("MyApp.sln", "", "yes", "y", "n", "", "", "");
 
         var options = Program.PromptForOptions();
 
@@ -85,10 +87,20 @@ public class ProgramPromptForOptionsTests
     [Test]
     public void PromptForOptions_ExcludeDirsCommaSeparated_ParsesAndTrims()
     {
-        using var input = new ConsoleInputScope("MyApp.sln", "", "n", "n", "", " wwwroot , docs ", "");
+        using var input = new ConsoleInputScope("MyApp.sln", "", "n", "n", "n", "", " wwwroot , docs ", "");
 
         var options = Program.PromptForOptions();
 
         Assert.That(options!.ExcludeDirs, Is.EquivalentTo(new[] { "wwwroot", "docs" }));
     }
+
+	[Test]
+	public void PromptForOptions_FindReadmeYes_SetsSearchReadme()
+	{
+		using var input = new ConsoleInputScope("MyApp.sln", "", "n", "n", "y", "", "", "");
+
+		var options = Program.PromptForOptions();
+
+		Assert.That(options!.SearchReadme, Is.True);
+	}
 }

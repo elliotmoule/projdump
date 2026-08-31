@@ -39,7 +39,7 @@ public class CSharpAnalyzerIntegrationTests
 		using var temp = new TempProjectDirectory();
 		string csprojPath = BuildNestedProject(temp);
 
-		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions { SearchForReadme = true });
 
 		Assert.That(analysis.ReadmeFiles.Select(f => f.File.FullName), Does.Contain(temp.GetFullPath("README.md")));
 	}
@@ -50,7 +50,7 @@ public class CSharpAnalyzerIntegrationTests
 		using var temp = new TempProjectDirectory();
 		string csprojPath = BuildNestedProject(temp);
 
-		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions { SearchForReadme = true });
 
 		Assert.That(analysis.AllFiles.Select(f => f.File.Name), Does.Not.Contain("README.md"));
 	}
@@ -62,7 +62,7 @@ public class CSharpAnalyzerIntegrationTests
 		string csprojPath = BuildNestedProject(temp);
 		temp.WriteFile(Path.Combine("src", "MyApp.Api", "README.md"), "# project readme");
 
-		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions { SearchForReadme = true });
 
 		var readmePaths = analysis.ReadmeFiles.Select(f => f.File.FullName).ToList();
 		Assert.That(readmePaths, Does.Contain(temp.GetFullPath(Path.Combine("src", "MyApp.Api", "README.md"))));
@@ -102,7 +102,7 @@ public class CSharpAnalyzerIntegrationTests
 		temp.WriteFile(Path.Combine("build", "MyApp.slnx"), "<Solution />");
 		temp.WriteFile(Path.Combine("build", "MyApp", "MyApp.csproj"), "<Project />");
 
-		var analysis = new CSharpAnalyzer().Analyze(temp.GetFullPath(Path.Combine("build", "MyApp.slnx")), new ProjectAnalysisOptions());
+		var analysis = new CSharpAnalyzer().Analyze(temp.GetFullPath(Path.Combine("build", "MyApp.slnx")), new ProjectAnalysisOptions { SearchForReadme = true });
 
 		Assert.That(analysis.ReadmeFiles.Select(f => f.File.FullName), Does.Contain(temp.GetFullPath("README.md")));
 	}
@@ -239,7 +239,18 @@ public class CSharpAnalyzerIntegrationTests
         Assert.That(analysis.AllFiles.Select(f => f.File.Name), Does.Contain("OrderServiceTests.cs"));
     }
 
-    [Test]
+	[Test]
+	public void Analyze_WithoutTheSwitch_DoesNotPullInTheRepositoryReadme()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildNestedProject(temp);
+
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+		Assert.That(analysis.ReadmeFiles, Is.Empty);
+	}
+
+	[Test]
     public void Analyze_WithScope_RestrictsToSubdirectory()
     {
         using var temp = new TempProjectDirectory();

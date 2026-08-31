@@ -86,7 +86,7 @@ public sealed class VueProjectAnalyzer : IProjectAnalyzer
 			.Select(f => new FileEntry { File = f, Role = VueFileClassifier.AssignRole(f, TestFileDetector) })
 			.ToList();
 
-		AncestorReadmeLocator.AddNearestReadme(readmeFiles, inputFileInfo.Directory);
+		AncestorReadmeLocator.AddNearestReadme(readmeFiles, inputFileInfo.Directory, options.SearchForReadme);
 
 		// Vue has no solution concept - always treated like C#'s "project" (non-solution) case.
 		var projFiles = new List<FileEntry> { new() { File = inputFileInfo, Role = FileRole.Build } };

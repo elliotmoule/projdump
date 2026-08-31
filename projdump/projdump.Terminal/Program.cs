@@ -7,15 +7,16 @@ using projdump.Shared;
 
 class Program
 {
-    internal sealed record RunOptions(
-        string InputPath,
-        string? CustomOutputPath,
-        bool Slim,
-        bool ExcludeTests,
-        string? ScopeDir,
-        string? TypeArg,
-        string? ModeArg,
-        IReadOnlyList<string> ExcludeDirs);
+	internal sealed record RunOptions(
+		string InputPath,
+		string? CustomOutputPath,
+		bool Slim,
+		bool ExcludeTests,
+		string? ScopeDir,
+		string? TypeArg,
+		string? ModeArg,
+		IReadOnlyList<string> ExcludeDirs,
+		bool SearchReadme = false);
 
 	internal enum RecentMenuAction { RunSelected, EnterNewCommand, Quit }
 
@@ -49,7 +50,8 @@ class Program
         Console.WriteLine("  --exclude-tests    Exclude test projects and test files");
         Console.WriteLine("  --scope <dir>      Restrict to a subdirectory (relative to project root)");
         Console.WriteLine("  --exclude-dir <name>      Exclude a directory by name, anywhere in the tree (repeatable)");
-        Console.WriteLine("  --type <csharp|vue>       Force project type (auto-detected by default)");
+		Console.WriteLine("  --find-readme      Look in parent directories for a README when the project has none");
+		Console.WriteLine("  --type <csharp|vue>       Force project type (auto-detected by default)");
         Console.WriteLine("  --mode <default|webapi>   Report focus mode (default: full dump)");
         Console.WriteLine("  --help, -h         Show this help");
         Console.WriteLine();
@@ -116,7 +118,8 @@ class Program
     {
         bool slim = false;
         bool excludeTests = false;
-        string? scopeDir = null;
+		bool searchReadme = false;
+		string? scopeDir = null;
         string? typeArg = null;
         string? modeArg = null;
         var excludeDirs = new List<string>();
@@ -133,7 +136,10 @@ class Program
                 case "--exclude-tests":
                     excludeTests = true;
                     break;
-                case "--scope":
+				case "--find-readme":
+					searchReadme = true;
+					break;
+				case "--scope":
                     if (i + 1 >= args.Length) { PrintError("--scope requires a directory argument."); return null; }
                     scopeDir = args[++i];
                     break;
@@ -165,16 +171,17 @@ class Program
             return null;
         }
 
-        return new RunOptions(
-            InputPath: positional[0],
-            CustomOutputPath: positional.Count > 1 ? positional[1] : null,
-            Slim: slim,
-            ExcludeTests: excludeTests,
-            ScopeDir: scopeDir,
-            TypeArg: typeArg,
-            ModeArg: modeArg,
-            ExcludeDirs: excludeDirs);
-    }
+		return new RunOptions(
+			InputPath: positional[0],
+			CustomOutputPath: positional.Count > 1 ? positional[1] : null,
+			Slim: slim,
+			ExcludeTests: excludeTests,
+			ScopeDir: scopeDir,
+			TypeArg: typeArg,
+			ModeArg: modeArg,
+			ExcludeDirs: excludeDirs,
+			SearchReadme: searchReadme);
+	}
 
 	/// <summary>
 	/// Lists recently used commands and asks which one to run.
@@ -245,6 +252,7 @@ class Program
 		var flags = new List<string>();
 		if (command.Slim) flags.Add("--slim");
 		if (command.ExcludeTests) flags.Add("--exclude-tests");
+		if (command.SearchReadme) flags.Add("--find-readme");
 		if (command.ScopeDir != null) flags.Add($"--scope {command.ScopeDir}");
 		foreach (string excludedDir in command.ExcludeDirs) flags.Add($"--exclude-dir {excludedDir}");
 		if (command.TypeArg != null) flags.Add($"--type {command.TypeArg}");
@@ -269,26 +277,16 @@ class Program
 		return looksLikeSolution ? (fallbackName, null) : (null, fallbackName);
 	}
 
-	internal static SavedCommand ToSavedCommand(RunOptions options) => new(
-        DateTimeOffset.Now,
-        options.InputPath,
-        options.CustomOutputPath,
-        options.Slim,
-        options.ExcludeTests,
-        options.ScopeDir,
-        options.TypeArg,
-        options.ModeArg,
-        options.ExcludeDirs);
-
-    internal static RunOptions ToRunOptions(SavedCommand cmd) => new(
-        cmd.InputPath,
-        cmd.CustomOutputPath,
-        cmd.Slim,
-        cmd.ExcludeTests,
-        cmd.ScopeDir,
-        cmd.TypeArg,
-        cmd.ModeArg,
-        cmd.ExcludeDirs);
+	internal static RunOptions ToRunOptions(SavedCommand cmd) => new(
+		cmd.InputPath,
+		cmd.CustomOutputPath,
+		cmd.Slim,
+		cmd.ExcludeTests,
+		cmd.ScopeDir,
+		cmd.TypeArg,
+		cmd.ModeArg,
+		cmd.ExcludeDirs,
+		cmd.SearchReadme);
 
 	/// <summary>
 	/// Promotes a command to the top of the recently used list, asking first only when it is
@@ -319,7 +317,8 @@ class Program
 		options.ModeArg,
 		options.ExcludeDirs,
 		solutionName,
-		projectName);
+		projectName,
+		options.SearchReadme);
 
 	internal static RunOptions? PromptForOptions()
     {
@@ -335,7 +334,8 @@ class Program
         string? customOutputPath = OrNull(Prompt("Output path (blank = your Desktop): "));
         bool slim = PromptYesNo("Slim mode - omit file contents? [y/N]: ");
         bool excludeTests = PromptYesNo("Exclude test files? [y/N]: ");
-        string? scopeDir = OrNull(Prompt("Scope to a subdirectory (blank = whole project): "));
+		bool searchReadme = PromptYesNo("Search parent directories for a README? [y/N]: ");
+		string? scopeDir = OrNull(Prompt("Scope to a subdirectory (blank = whole project): "));
         string? excludeDirsInput = OrNull(Prompt("Exclude directories, comma-separated e.g. wwwroot,docs (blank = none): "));
         var excludeDirs = excludeDirsInput == null
             ? []
@@ -355,8 +355,8 @@ class Program
 
         Console.WriteLine();
 
-        return new RunOptions(inputPath, customOutputPath, slim, excludeTests, scopeDir, typeArg, modeArg, excludeDirs);
-    }
+		return new RunOptions(inputPath, customOutputPath, slim, excludeTests, scopeDir, typeArg, modeArg, excludeDirs, searchReadme);
+	}
 
     static string Prompt(string label)
     {
@@ -384,8 +384,14 @@ class Program
             var analyzer = registry.Resolve(options.InputPath, options.TypeArg);
             ProjectTypeRegistry.ValidateMode(analyzer, modeKey);
 
-            var analysisOptions = new ProjectAnalysisOptions { ExcludeTests = options.ExcludeTests, ScopeDir = options.ScopeDir, ExcludeDirs = options.ExcludeDirs };
-            analysis = analyzer.Analyze(options.InputPath, analysisOptions);
+			var analysisOptions = new ProjectAnalysisOptions
+			{
+				ExcludeTests = options.ExcludeTests,
+				ScopeDir = options.ScopeDir,
+				ExcludeDirs = options.ExcludeDirs,
+				SearchForReadme = options.SearchReadme,
+			};
+			analysis = analyzer.Analyze(options.InputPath, analysisOptions);
 
             IDumpMode mode = modeKey switch
             {
@@ -431,10 +437,11 @@ class Program
             RootDir = analysis.RootDir,
             IsSolution = analysis.IsSolution,
             Extension = analysis.Extension,
-            Slim = options.Slim,
-            ExcludeTests = options.ExcludeTests,
-            ScopeDir = options.ScopeDir,
-            ExcludeDirs = options.ExcludeDirs,
+			Slim = options.Slim,
+			ExcludeTests = options.ExcludeTests,
+			SearchForReadme = options.SearchReadme,
+			ScopeDir = options.ScopeDir,
+			ExcludeDirs = options.ExcludeDirs,
             AllFiles = [.. analysis.AllFiles.Select(e => e.File)],
             CodeFiles = [.. analysis.CodeFiles.Select(e => e.File)],
             ConfigFiles = [.. analysis.ConfigFiles.Select(e => e.File)],

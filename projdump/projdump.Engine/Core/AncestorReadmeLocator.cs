@@ -12,15 +12,28 @@ public static class AncestorReadmeLocator
 	static readonly string[] ReadmeFileNames = ["README.md", "README.txt"];
 
 	/// <summary>
-	/// Finds the nearest README by checking the starting directory and then walking upwards.
+	/// Finds a README beside the starting directory, optionally continuing up the tree.
 	/// </summary>
 	/// <param name="startDir">The directory holding the project or solution file.</param>
+	/// <param name="searchAncestors">True to keep climbing when the starting directory has none.</param>
 	/// <returns>The closest README found, or null when there is none within reach.</returns>
-	public static FileInfo? Find(DirectoryInfo? startDir)
+	public static FileInfo? Find(DirectoryInfo? startDir, bool searchAncestors)
 	{
-		DirectoryInfo? currentDir = startDir;
+		if (startDir == null)
+			return null;
 
-		for (int level = 0; level <= MaxSearchDepth && currentDir != null; level++)
+		FileInfo? adjacentReadme = FindInDirectory(startDir);
+		if (adjacentReadme != null || !searchAncestors)
+			return adjacentReadme;
+
+		// The starting directory is already ruled out, so the walk begins at its parent.
+		// It still counts as level 0 for the depth limit.
+		if (IsRepositoryRoot(startDir))
+			return null;
+
+		DirectoryInfo? currentDir = startDir.Parent;
+
+		for (int level = 1; level <= MaxSearchDepth && currentDir != null; level++)
 		{
 			FileInfo? readme = FindInDirectory(currentDir);
 			if (readme != null)
@@ -71,9 +84,10 @@ public static class AncestorReadmeLocator
 	/// </summary>
 	/// <param name="readmeFiles">The documentation files collected from the project tree.</param>
 	/// <param name="startDir">The directory holding the project or solution file.</param>
-	public static void AddNearestReadme(List<FileEntry> readmeFiles, DirectoryInfo? startDir)
+	/// <param name="searchAncestors">True to look above the starting directory when it has none.</param>
+	public static void AddNearestReadme(List<FileEntry> readmeFiles, DirectoryInfo? startDir, bool searchAncestors)
 	{
-		FileInfo? nearestReadme = Find(startDir);
+		FileInfo? nearestReadme = Find(startDir, searchAncestors);
 		if (nearestReadme == null)
 			return;
 

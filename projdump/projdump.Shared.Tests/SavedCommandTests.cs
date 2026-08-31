@@ -72,4 +72,12 @@ public class SavedCommandTests
 
 		Assert.That(original.HasSameOptions(original with { ExcludeDirs = ["docs", "wwwroot"] }), Is.True);
 	}
+
+	[Test]
+	public void HasSameOptions_False_WhenReadmeSearchDiffers()
+	{
+		var original = MakeCommand();
+
+		Assert.That(original.HasSameOptions(original with { SearchReadme = !original.SearchReadme }), Is.False);
+	}
 }

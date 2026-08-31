@@ -92,7 +92,7 @@ public sealed class CSharpAnalyzer : IProjectAnalyzer
 
 		// A README often sits above the solution or project rather than beside it. Searching from
 		// the input file's own directory keeps --scope from skewing where the walk starts.
-		AncestorReadmeLocator.AddNearestReadme(readmeFiles, inputFileInfo.Directory);
+		AncestorReadmeLocator.AddNearestReadme(readmeFiles, inputFileInfo.Directory, options.SearchForReadme);
 
 		var projFileInfos = isSolution
             ? allFileInfos.Where(f => f.Extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase)).ToList()

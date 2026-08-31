@@ -9,7 +9,8 @@ public sealed class ReportRenderRequest
     public required string Extension { get; init; }
     public required bool Slim { get; init; }
     public required bool ExcludeTests { get; init; }
-    public string? ScopeDir { get; init; }
+	public bool SearchForReadme { get; init; }
+	public string? ScopeDir { get; init; }
     public IReadOnlyList<string> ExcludeDirs { get; init; } = [];
     public required List<FileInfo> AllFiles { get; init; }
     public required List<FileInfo> CodeFiles { get; init; }

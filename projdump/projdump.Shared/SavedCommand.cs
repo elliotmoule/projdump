@@ -1,6 +1,4 @@
-﻿namespace projdump.Shared;
-
-public sealed record SavedCommand(
+﻿public sealed record SavedCommand(
 	DateTimeOffset SavedAt,
 	string InputPath,
 	string? CustomOutputPath,
@@ -11,7 +9,8 @@ public sealed record SavedCommand(
 	string? ModeArg,
 	IReadOnlyList<string> ExcludeDirs,
 	string? SolutionName = null,
-	string? ProjectName = null)
+	string? ProjectName = null,
+	bool SearchReadme = false)
 {
 	/// <summary>
 	/// Determines whether another command runs with identical options, ignoring when it was
@@ -24,6 +23,7 @@ public sealed record SavedCommand(
 		PathsMatch(CustomOutputPath, other.CustomOutputPath) &&
 		Slim == other.Slim &&
 		ExcludeTests == other.ExcludeTests &&
+		SearchReadme == other.SearchReadme &&
 		PathsMatch(ScopeDir, other.ScopeDir) &&
 		PathsMatch(TypeArg, other.TypeArg) &&
 		PathsMatch(ModeArg, other.ModeArg) &&

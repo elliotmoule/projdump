@@ -30,7 +30,7 @@ public class VueProjectAnalyzerIntegrationTests
 		temp.WriteFile(Path.Combine("frontend", "package.json"), VuePackageJson);
 		temp.WriteFile(Path.Combine("frontend", "main.js"), "// entry point");
 
-		var analysis = new VueProjectAnalyzer().Analyze(temp.GetFullPath("frontend"), new ProjectAnalysisOptions());
+		var analysis = new VueProjectAnalyzer().Analyze(temp.GetFullPath("frontend"), new ProjectAnalysisOptions { SearchForReadme = true });
 
 		Assert.That(analysis.ReadmeFiles.Select(f => f.File.FullName), Does.Contain(temp.GetFullPath("README.md")));
 		Assert.That(analysis.AllFiles.Select(f => f.File.Name), Does.Not.Contain("README.md"));
@@ -45,7 +45,7 @@ public class VueProjectAnalyzerIntegrationTests
 		temp.WriteFile(Path.Combine("frontend", "package.json"), VuePackageJson);
 		temp.WriteFile(Path.Combine("frontend", "README.md"), "# frontend readme");
 
-		var analysis = new VueProjectAnalyzer().Analyze(temp.GetFullPath("frontend"), new ProjectAnalysisOptions());
+		var analysis = new VueProjectAnalyzer().Analyze(temp.GetFullPath("frontend"), new ProjectAnalysisOptions { SearchForReadme = true });
 
 		Assert.That(analysis.ReadmeFiles.Select(f => f.File.FullName), Does.Not.Contain(temp.GetFullPath("README.md")));
 	}
@@ -228,7 +228,21 @@ public class VueProjectAnalyzerIntegrationTests
         }
     }
 
-    [Test]
+	[Test]
+	public void Analyze_WithoutTheSwitch_DoesNotPullInTheRepositoryReadme()
+	{
+		using var temp = new TempProjectDirectory();
+		Directory.CreateDirectory(temp.GetFullPath(".git"));
+		temp.WriteFile("README.md", "# repo readme");
+		temp.WriteFile(Path.Combine("frontend", "package.json"), VuePackageJson);
+		temp.WriteFile(Path.Combine("frontend", "main.js"), "// entry point");
+
+		var analysis = new VueProjectAnalyzer().Analyze(temp.GetFullPath("frontend"), new ProjectAnalysisOptions());
+
+		Assert.That(analysis.ReadmeFiles, Is.Empty);
+	}
+
+	[Test]
     public void Analyze_ThrowsForDirectoryWithoutPackageJson()
     {
         using var temp = new TempProjectDirectory();
