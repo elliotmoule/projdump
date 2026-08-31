@@ -6,6 +6,7 @@ A .NET CLI tool that distils a C# solution/project or a Vue project into a singl
 - [Usage](#usage)
 - [How it works](#how-it-works)
 - [How project type is detected](#how-project-type-is-detected)
+- [How the README is found](#how-the-readme-is-found)
 - [What gets excluded](#what-gets-excluded)
 - [Building](#building)
 - [Project structure](#project-structure)
@@ -22,7 +23,7 @@ Point `projdump` at a C# solution/project (or a folder containing one), or a Vue
 
 - **Project summary** — file extension breakdown table
 - **Project structure** — full relative file tree
-- **Documentation** — contents of any `.md` files found
+- **Documentation** — contents of any `.md` files found, plus the project's README even when it lives further up the tree
 - **Solution configuration** — the `.sln`/`.slnx` file itself (C# solutions only)
 - **Project dependencies** — `.csproj` contents, or `package.json` for Vue
 - **Configuration files** — `appsettings.json`, `vite.config.ts`, `.env`, and other well-known config files
@@ -43,13 +44,16 @@ Run with no arguments at all for **interactive mode** — it'll prompt you for t
 projdump
 ```
 
-A few things interactive mode does differently from the plain CLI flags:
+Interactive mode **loops**: after each run it drops you back at the recent commands list, so you can dump several projects in a row without restarting.
 
-- **Offers to reuse a recent command first**, if you've saved any before.
+- **Opens straight on your recent commands.** Pick a number to re-run one, press Enter to build a new command, or `q` to quit. With no history yet it goes straight to the normal prompts, where a blank path is the way out.
 - **Skips the mode question for solutions.** Point it at a `.sln`/`.slnx` and `--mode` won't be asked, since a mode applies per-project and a solution usually spans more than one.
-- **Offers to save the command** once a run finishes successfully, so it shows up in the reuse list next time.
+- **Only asks to save genuinely new commands.** Re-running one from the list, or typing one that matches an existing entry flag-for-flag, skips the question — it's already saved.
+- **Promotes whatever you just ran** to the top of the list, so your most-used commands stay within reach.
 
-Saved commands live in `<ApplicationData>/projdump/command-history.json` (`%APPDATA%\projdump\command-history.json` on Windows) as a plain, append-only JSON array — nothing is ever rotated or capped, it just grows for as long as you keep saving. When the file has entries, interactive mode asks upfront whether to reuse one, then lists them most-recent-first for you to pick from; answering no (or there being no file yet) falls through to the normal prompts.
+Each entry renders as `#. [date] Solution/Project | flags | output path`, colour-coded so the list stays scannable. The input path isn't shown — the solution and project names identify an entry well enough, and full paths make the list hard to read. For a C# project the solution name comes from the nearest `.sln`/`.slnx` above it; for Vue, the folder holding `package.json` stands in for the solution and the `name` field is the project. Either half is dropped when it can't be resolved, so a standalone `.csproj` with no solution nearby shows just the project name.
+
+Saved commands live in `<ApplicationData>/projdump/command-history.json` (`%APPDATA%\projdump\command-history.json` on Windows) as a plain JSON array, ordered most-recent-first. Nothing is rotated or capped — it grows for as long as you keep saving — but a given command is only ever stored once: re-running an identical one moves it to the top rather than adding a duplicate. Two commands count as identical when every flag matches, so `MyApp.sln --slim` and `MyApp.sln` are tracked as separate entries. Repeated `--exclude-dir` values are compared as a set, so the order you typed them in doesn't split one command into two.
 
 ### Options
 
@@ -57,8 +61,9 @@ Saved commands live in `<ApplicationData>/projdump/command-history.json` (`%APPD
 | :--- | :--- |
 | `--slim` | Omit file contents; list filenames and sizes only |
 | `--exclude-tests` | Exclude test projects and test files |
+| `--find-readme` | Look in parent directories for a README when the project has none |
 | `--scope <dir>` | Restrict to a subdirectory, relative to the project root |
-| `--exclude-dir <name>` | Exclude a directory by name, anywhere in the tree (repeatable) |
+| `--exclude-dir <n>` | Exclude a directory by name, anywhere in the tree (repeatable) |
 | `--type <csharp\|vue>` | Force project type (auto-detected by default) |
 | `--mode <default\|webapi>` | Report focus mode (`webapi` is C#-only for now) |
 | `--help`, `-h` | Show usage |
@@ -82,6 +87,9 @@ projdump MyApp.sln C:\context\
 # Skip tests, and scope to one project within a solution
 projdump MyApp.sln --exclude-tests --scope src/MyApp.Api
 
+# Pull in the repo's root README for a project buried under src/
+projdump src/MyApp.Api/MyApp.Api.csproj --find-readme
+
 # Focus the report on backend API surface (C# only)
 projdump MyApp.Api.csproj --mode webapi
 
@@ -98,9 +106,12 @@ The output filename is always `<project-name>-app-solution.md` or `<project-name
 ```mermaid
 flowchart TD
     A["Run projdump"] --> B{"Arguments provided?"}
-    B -- No --> C["Interactive prompts:\npath, output, options"]
     B -- Yes --> D["Parse CLI flags"]
-    C --> E["Resolve project type"]
+    B -- No --> C["Recent commands list"]
+    C -- "pick a number" --> E["Resolve project type"]
+    C -- "Enter" --> C2["Interactive prompts:\npath, output, options"]
+    C -- "q" --> Z["Exit"]
+    C2 --> E
     D --> E
     E --> F["Analyze: gather + classify files"]
     F --> G{"Mode"}
@@ -110,6 +121,7 @@ flowchart TD
     I --> J
     J --> K["Write .md file"]
     K --> L["Paste into your LLM of choice"]
+    K -- "interactive" --> C
 ```
 
 ## How project type is detected
@@ -128,6 +140,23 @@ flowchart TD
 ```
 
 C# is checked first, so if a directory somehow contains both a solution file and a Vue `package.json` at the same level, the C# analyzer wins. Pointing at a directory only looks one level deep for a solution file (not recursively) — if there's more than one `.sln`/`.slnx` directly in it, that's ambiguous and `projdump` will ask you to point at the exact file instead of guessing.
+
+## How the README is found
+
+A README is usually the single most useful piece of context in a dump, but it doesn't always sit where the project does — a repo with `src/MyApp.Api/MyApp.Api.csproj` typically keeps its README at the root.
+
+Two things happen, in order:
+
+1. **A README beside the input is always included.** `README.md` or `README.txt` (case-insensitive, markdown wins if both exist) in the same folder as the `.sln`/`.csproj`/`package.json` goes in regardless of flags. This matters because the ordinary file gather only collects `.md`, and `--scope` can move the gathered tree away from the project root entirely.
+2. **With `--find-readme`, the search continues upwards.** Only when nothing is found beside the input, and only when the flag is given — it's off by default, since silently reaching outside the project isn't something you want happening unasked.
+
+The upward walk stops at whichever comes first:
+
+- A directory containing a README.
+- A directory containing `.git` (a file or a folder, so worktrees and submodules count) — that's the repository root, and nothing above it belongs to this project.
+- Five levels up, which bounds the search on anything that isn't a git repo.
+
+A README pulled in from above the project tree is rendered under **Documentation** with its full path and a note saying where it came from. It's deliberately left out of the file listing and the extension count table — it isn't part of the project, it's context borrowed from around it.
 
 ## What gets excluded
 
@@ -198,8 +227,8 @@ projdump.Terminal.Tests/   # NUnit tests for projdump.Terminal
 
 Three NUnit projects, one per assembly:
 
-- `projdump.Engine.Tests` — classifiers, exclusion filters, the registry, modes, the renderer
-- `projdump.Shared.Tests` — command history load/save
+- `projdump.Engine.Tests` — classifiers, exclusion filters, the registry, modes, README discovery, the renderer
+- `projdump.Shared.Tests` — command history load/save, ordering, and command matching
 - `projdump.Terminal.Tests` — argument parsing, filename sanitization, the interactive prompt flow, and end-to-end runs through `Program.Execute`
 
 ```bash
@@ -212,9 +241,11 @@ A few things worth knowing if you're adding tests:
 
 - Most of what's tested (`CSharpFileClassifier`, the exclusion filters, `FormatHelpers`, etc.) is `internal`, not `public` — each project grants its test project access via `InternalsVisibleTo` rather than widening the public API just for testing.
 - Never pass a bare relative path (`new FileInfo("Foo.cs")`) into a path-segment check. It resolves against the test runner's working directory, typically a build output path like `bin/Debug/net10.0/`, which itself contains segments like `bin` that these filters look for — silent false positives depending on where the repo happens to live. Use `TestSupport/FakePaths.Combine(...)` in `projdump.Engine.Tests`, which anchors the path under the OS temp directory instead — and make sure it's a genuinely *absolute* path, not just a relative one with an extra folder tacked on, since a relative path still inherits the CWD regardless of what you prepend to it.
-- Interactive mode's prompt flow (`PromptForOptions`, `TryUseSavedCommand`, `OfferToSaveCommand`) *is* covered, via a `ConsoleInputScope` helper in `projdump.Terminal.Tests` that scripts `Console.ReadLine()` answers for a test. One subtlety: `Console.ReadLine()` returns `null` (not an exception) once the scripted input runs out, so a test with too few queued answers can accidentally "pass" even when the code being tested is broken — queue a recognizable sentinel value as the next answer if you want to prove a question was genuinely *skipped* rather than just running out of input. What isn't covered is `RunInteractive`/`Main` as one integrated flow (reuse → prompt → execute → save) — each piece is tested individually instead.
+- Anything that walks *upwards* from a temp directory needs a boundary, or it climbs into the real system temp folder and can pick up a stray `README.md` from an unrelated machine. Tests for the ancestor search create a `.git` folder at the temp root to stop the walk — deterministic, and it exercises the repository-root rule at the same time.
+- Interactive mode's prompt flow (`PromptForOptions`, `ShowRecentCommands`, `RecordCommandUse`) *is* covered, via a `ConsoleInputScope` helper in `projdump.Terminal.Tests` that scripts `Console.ReadLine()` answers for a test. One subtlety: `Console.ReadLine()` returns `null` (not an exception) once the scripted input runs out, so a test with too few queued answers can accidentally "pass" even when the code being tested is broken — queue a recognizable sentinel value as the next answer if you want to prove a question was genuinely *skipped* rather than just running out of input. The inverse also bites: adding a new question to `PromptForOptions` shifts every queued answer after it, so scripted inputs need re-checking whenever the prompt order changes. What isn't covered is `RunInteractive`/`Main` as one integrated loop (list → prompt → execute → record) — each piece is tested individually instead.
 - Two features write outside the project being dumped: the Desktop-default output path, and the command history file under `%APPDATA%`. Both have a test-only static override on `Program` (`DefaultOutputDirectoryOverride`, `CommandHistoryFilePathOverride`) with a matching `IDisposable` scope class, so tests never touch your real Desktop or your real saved-command history.
 - Records with a collection-typed field (like `SavedCommand.ExcludeDirs`, typed `IReadOnlyList<string>`) can't be compared with `Is.EqualTo` across a serialization round-trip — the list is a new instance each time, and collection types don't override `Equals` for structural comparison, so record equality silently falls back to reference equality on that field. Compare fields individually instead, using `Is.EquivalentTo` for the collection field.
+- `SavedCommand` is a positional record that gets constructed by position in several tests, so new fields are appended at the end with a default rather than slotted in beside related ones. It reads slightly out of order in the declaration; it keeps every existing call site compiling, and old history files deserialize with the new fields at their defaults.
 
 ## Adding a new project type
 
@@ -238,7 +269,8 @@ To add support for a new stack:
 1. Create `Analyzers/<YourType>/<YourType>Analyzer.cs` implementing `IProjectAnalyzer`.
 2. Write a `CanHandle` check (extension, marker file, folder contents — whatever identifies your stack).
 3. In `Analyze`, gather files and tag each one with a `FileRole` (`EntryPoint`, `Model`, `Config`, etc.) — that's what lets report modes filter intelligently without knowing anything about your stack.
-4. Register it in `Program.cs`'s `ProjectTypeRegistry` alongside the existing analyzers.
+4. Call `AncestorReadmeLocator.AddNearestReadme(readmeFiles, inputFileInfo.Directory, options.SearchForReadme)` after gathering, so your type gets the same README handling as the others for free.
+5. Register it in `Program.cs`'s `ProjectTypeRegistry` alongside the existing analyzers.
 
 The renderer, the mode system, and the CLI/interactive layer are all written against `ProjectAnalysis` and don't need to change for a new type to work.
 
@@ -269,12 +301,13 @@ The first section or two of a real run against a small ASP.NET Core API, trimmed
 
 > **Estimated tokens:** ~8,214  _(character count ÷ 4 — treat as a rough guide)_
 
+> **Flags:** `--find-readme`
+
 ## Project Summary
 | File Extension | Count |
 | :--- | :--- |
 | .cs | 14 |
 | .json | 3 |
-| .md | 1 |
 
 ## Project Structure
 ```text
@@ -287,6 +320,15 @@ Models/OrderDto.cs
 Services/IOrderService.cs
 Services/OrderService.cs
 ```
+
+## Documentation
+### README.md
+**Path:** `D:\Repositories\MyApp\README.md`
+
+> **Sourced from outside the project tree.** Found by searching parent directories for a README; it is not included in the file listing or extension counts above.
+
+# MyApp
+...
 
 ## Project Dependencies
 ### MyApp.Api.csproj
