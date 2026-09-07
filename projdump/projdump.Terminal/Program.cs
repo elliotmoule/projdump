@@ -1,5 +1,4 @@
-﻿using projdump.Engine.Analyzers.CSharp;
-using projdump.Engine.Analyzers.Vue;
+﻿using projdump.Engine.Analyzers;
 using projdump.Engine.Core;
 using projdump.Engine.Modes;
 using projdump.Engine.Rendering;
@@ -33,26 +32,31 @@ class Program
     // Test-only override point - if set, used instead of the real %APPDATA% history file.
     internal static string? CommandHistoryFilePathOverride;
 
-    static void PrintUsage()
+	// Built once - the analyzer list is fixed for the lifetime of the process.
+	static readonly ProjectTypeRegistry Registry = AnalyzerCatalog.CreateRegistry();
+
+	static void PrintUsage()
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.WriteLine("Usage: projdump <path> [output-path] [options]");
         Console.WriteLine("       projdump                          (no args = interactive mode)");
         Console.WriteLine();
-        Console.WriteLine("Supported input:");
-        Console.WriteLine("  .sln, .slnx, .csproj              C# solution or project");
-        Console.WriteLine("  <directory>                        C# project (auto-discovers a top-level .sln/.slnx),");
-        Console.WriteLine("                                     or a Vue project (auto-detected via a 'vue' dependency)");
-        Console.WriteLine("  package.json                       Vue project");
-        Console.WriteLine();
-        Console.WriteLine("Options:");
+		Console.WriteLine("Supported input:");
+		Console.WriteLine("  .sln, .slnx, .csproj              C# solution or project");
+		Console.WriteLine("  <directory>                        C# project (auto-discovers a top-level .sln/.slnx),");
+		Console.WriteLine("                                     or a JS project (auto-detected from package.json)");
+		Console.WriteLine("  package.json                       JS project");
+		Console.WriteLine();
+		Console.WriteLine($"Project types: {string.Join(", ", Registry.DisplayNames)}");
+		Console.WriteLine();
+		Console.WriteLine("Options:");
         Console.WriteLine("  --slim             Omit file contents; list filenames and sizes only");
         Console.WriteLine("  --exclude-tests    Exclude test projects and test files");
         Console.WriteLine("  --scope <dir>      Restrict to a subdirectory (relative to project root)");
         Console.WriteLine("  --exclude-dir <name>      Exclude a directory by name, anywhere in the tree (repeatable)");
 		Console.WriteLine("  --find-readme      Look in parent directories for a README when the project has none");
-		Console.WriteLine("  --type <csharp|vue>       Force project type (auto-detected by default)");
-        Console.WriteLine("  --mode <default|webapi>   Report focus mode (default: full dump)");
+		Console.WriteLine($"  --type <{string.Join("|", Registry.TypeKeys)}>   Force project type (auto-detected by default)");
+		Console.WriteLine("  --mode <default|webapi>   Report focus mode (default: full dump)");
         Console.WriteLine("  --help, -h         Show this help");
         Console.WriteLine();
         Console.WriteLine("If no output path is given, the report is written to your Desktop.");
@@ -322,8 +326,8 @@ class Program
 
 	internal static RunOptions? PromptForOptions()
     {
-        string inputPath = Prompt("Path to .sln/.slnx/.csproj, a directory, or a Vue project directory: ").Trim('"');
-        if (string.IsNullOrWhiteSpace(inputPath))
+		string inputPath = Prompt("Path to .sln/.slnx/.csproj, a directory, or a JS project directory: ").Trim('"');
+		if (string.IsNullOrWhiteSpace(inputPath))
         {
             return null;
         }
@@ -340,9 +344,9 @@ class Program
         var excludeDirs = excludeDirsInput == null
             ? []
             : excludeDirsInput.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        string? typeArg = OrNull(Prompt("Project type - csharp/vue (blank = auto-detect): "));
+		string? typeArg = OrNull(Prompt($"Project type - {string.Join("/", Registry.TypeKeys)} (blank = auto-detect): "));
 
-        string? modeArg;
+		string? modeArg;
         if (isSolutionInput)
         {
             Console.WriteLine("Solution detected - mode applies per-project, so skipping that question.");
@@ -376,12 +380,10 @@ class Program
     {
         string modeKey = options.ModeArg ?? "default";
 
-        var registry = new ProjectTypeRegistry([new CSharpAnalyzer(), new VueProjectAnalyzer()]);
-
-        ProjectAnalysis analysis;
+		ProjectAnalysis analysis;
         try
         {
-            var analyzer = registry.Resolve(options.InputPath, options.TypeArg);
+            var analyzer = Registry.Resolve(options.InputPath, options.TypeArg);
             ProjectTypeRegistry.ValidateMode(analyzer, modeKey);
 
 			var analysisOptions = new ProjectAnalysisOptions
@@ -433,7 +435,8 @@ class Program
 
         var renderRequest = new ReportRenderRequest
         {
-            InputFileInfo = analysis.InputFileInfo,
+			ProjectName = analysis.ProjectName,
+			InputFileInfo = analysis.InputFileInfo,
             RootDir = analysis.RootDir,
             IsSolution = analysis.IsSolution,
             Extension = analysis.Extension,

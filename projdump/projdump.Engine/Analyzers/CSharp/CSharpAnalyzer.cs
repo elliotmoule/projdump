@@ -15,9 +15,11 @@ public sealed class CSharpAnalyzer : IProjectAnalyzer
         new GenericTestPathDetector(),
         new CSharpTestFileDetector());
 
-    public string TypeKey => "csharp";
+	public string TypeKey => "csharp";
 
-    public IReadOnlyCollection<string> SupportedModes => ["default", "webapi"];
+	public string DisplayName => "C#";
+
+	public IReadOnlyCollection<string> SupportedModes => ["default", "webapi"];
 
     public bool CanHandle(string inputPath)
     {

@@ -15,10 +15,12 @@ public sealed class VueProjectAnalyzer : IProjectAnalyzer
         new GenericTestPathDetector(),
         new VueTestFileDetector());
 
-    public string TypeKey => "vue";
+	public string TypeKey => "vue";
 
-    // WebAPI mode is C#-only for now.
-    public IReadOnlyCollection<string> SupportedModes => ["default"];
+	public string DisplayName => "Vue";
+
+	// WebAPI mode is C#-only for now.
+	public IReadOnlyCollection<string> SupportedModes => ["default"];
 
     public bool CanHandle(string inputPath)
     {

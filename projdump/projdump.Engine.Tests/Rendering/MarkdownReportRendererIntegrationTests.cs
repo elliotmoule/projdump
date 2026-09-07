@@ -26,7 +26,8 @@ public class MarkdownReportRendererIntegrationTests
 
         return new ReportRenderRequest
         {
-            InputFileInfo = inputFileInfo,
+            ProjectName = "MyApp",
+			InputFileInfo = inputFileInfo,
             RootDir = temp.RootDirectoryInfo,
             IsSolution = isSolution,
             Extension = ".csproj",
@@ -42,18 +43,18 @@ public class MarkdownReportRendererIntegrationTests
         };
     }
 
-    [Test]
-    public void Render_HeaderShowsProjectFileName_AndKind()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false);
+	[Test]
+	public void Render_HeaderShowsProjectName_AndKind()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.StartWith("# MyApp.csproj - App Project"));
-    }
+		Assert.That(output, Does.StartWith("# MyApp - App Project"));
+	}
 
-    [Test]
+	[Test]
     public void Render_SlimMode_AddsModeLabelAndNote()
     {
         using var temp = new TempProjectDirectory();
@@ -248,6 +249,7 @@ public class MarkdownReportRendererIntegrationTests
 
 		var request = new ReportRenderRequest
 		{
+            ProjectName = "MyApp",
 			InputFileInfo = new FileInfo(csprojPath),
 			RootDir = new DirectoryInfo(temp.GetFullPath("src")),
 			IsSolution = false,
@@ -282,5 +284,36 @@ public class MarkdownReportRendererIntegrationTests
 		var (output, _) = MarkdownReportRenderer.Render(request);
 
 		Assert.That(output, Does.Not.Contain("Sourced from outside"));
+	}
+
+	[Test]
+	public void Render_HeaderUsesProjectName_NotTheInputFileName()
+	{
+		// Regression: JS projects take package.json as input, so the file name
+		// is never the project name.
+		using var temp = new TempProjectDirectory();
+		string packageJsonPath = temp.WriteFile("package.json", """{ "name": "bookwings" }""");
+
+		var request = new ReportRenderRequest
+		{
+			InputFileInfo = new FileInfo(packageJsonPath),
+			RootDir = new DirectoryInfo(temp.RootPath),
+			IsSolution = false,
+			Extension = ".json",
+			ProjectName = "bookwings",
+			Slim = false,
+			ExcludeTests = false,
+			ScopeDir = null,
+			ExcludeDirs = [],
+			AllFiles = [new FileInfo(packageJsonPath)],
+			CodeFiles = [],
+			ConfigFiles = [],
+			ReadmeFiles = [],
+			ProjFiles = [new FileInfo(packageJsonPath)],
+		};
+
+		var (output, _) = MarkdownReportRenderer.Render(request);
+
+		Assert.That(output, Does.StartWith("# bookwings - App Project"));
 	}
 }

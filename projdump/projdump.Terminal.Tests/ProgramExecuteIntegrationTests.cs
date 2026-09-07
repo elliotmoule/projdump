@@ -20,7 +20,7 @@ public class ProgramExecuteIntegrationTests
         Assert.That(File.Exists(expectedOutputPath), Is.True);
 
         string content = File.ReadAllText(expectedOutputPath);
-        Assert.That(content, Does.StartWith("# MyApp.csproj - App Project"));
+        Assert.That(content, Does.StartWith("# MyApp - App Project"));
         Assert.That(content, Does.Contain("WebApplication.CreateBuilder"));
     }
 

@@ -3,7 +3,8 @@
 // What MarkdownReportRenderer needs; kept separate from ProjectAnalysis so the renderer stays type-agnostic.
 public sealed class ReportRenderRequest
 {
-    public required FileInfo InputFileInfo { get; init; }
+	public required string ProjectName { get; init; }
+	public required FileInfo InputFileInfo { get; init; }
     public required DirectoryInfo RootDir { get; init; }
     public required bool IsSolution { get; init; }
     public required string Extension { get; init; }

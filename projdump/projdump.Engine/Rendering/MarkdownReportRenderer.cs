@@ -11,8 +11,8 @@ public static class MarkdownReportRenderer
 
         // Header
         string modeLabel = request.Slim ? " (slim)" : "";
-        sb.AppendLine($"# {request.InputFileInfo.Name} - {(request.IsSolution ? "App Solution" : "App Project")}{modeLabel}");
-        sb.AppendLine();
+		sb.AppendLine($"# {request.ProjectName} - {(request.IsSolution ? "App Solution" : "App Project")}{modeLabel}");
+		sb.AppendLine();
 
         if (request.Slim)
         {

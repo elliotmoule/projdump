@@ -22,7 +22,16 @@ public class VcsAndToolingExclusionFilterTests
         Assert.That(_filter.IsExcluded(new FileInfo(path)), Is.True);
     }
 
-    [Test]
+	[TestCase(".idea")]
+	[TestCase(".claude")]
+	[TestCase(".cursor")]
+	public void IsExcluded_ReturnsTrue_ForEditorAndAgentConfigFolders(string folder)
+	{
+		var path = FakePaths.Combine("repo", folder, "settings.json");
+		Assert.That(_filter.IsExcluded(new FileInfo(path)), Is.True);
+	}
+
+	[Test]
     public void IsExcluded_ReturnsFalse_ForRegularFile()
     {
         var path = FakePaths.Combine("repo", "src", "Program.cs");
