@@ -135,6 +135,9 @@ sealed class ReactNativeFileClassifier
 		if (f.Extension.Equals(".md", StringComparison.OrdinalIgnoreCase))
 			return FileRole.Doc;
 
+		if (ScriptFileClassifier.IsScriptFile(f))
+			return FileRole.Script;
+
 		if (IsConfigFile(f))
 			return FileRole.Config;
 

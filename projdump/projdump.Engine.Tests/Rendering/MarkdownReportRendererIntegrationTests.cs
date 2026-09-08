@@ -6,42 +6,45 @@ namespace projdump.Engine.Tests.Rendering;
 [TestFixture]
 public class MarkdownReportRendererIntegrationTests
 {
-    static ReportRenderRequest BuildRequest(
-        TempProjectDirectory temp,
-        bool isSolution,
-        bool slim = false,
-        bool excludeTests = false,
-        string? scopeDir = null,
-        IReadOnlyList<string>? excludeDirs = null,
-        bool includeReadme = true,
-        bool includeConfig = true)
-    {
-        string csprojPath = temp.WriteFile("MyApp.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
-        string programPath = temp.WriteFile("Program.cs", "var builder = WebApplication.CreateBuilder(args);");
-        string configPath = temp.WriteFile("appsettings.json", "{ \"Key\": \"Value\" }");
-        string readmePath = temp.WriteFile("README.md", "# MyApp\n\nSample readme content.");
+	static ReportRenderRequest BuildRequest(
+		TempProjectDirectory temp,
+		bool isSolution,
+		bool slim = false,
+		bool excludeTests = false,
+		string? scopeDir = null,
+		IReadOnlyList<string>? excludeDirs = null,
+		bool includeReadme = true,
+		bool includeConfig = true,
+		bool includeScript = false)
+	{
+		string csprojPath = temp.WriteFile("MyApp.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+		string programPath = temp.WriteFile("Program.cs", "var builder = WebApplication.CreateBuilder(args);");
+		string configPath = temp.WriteFile("appsettings.json", "{ \"Key\": \"Value\" }");
+		string readmePath = temp.WriteFile("README.md", "# MyApp\n\nSample readme content.");
+		string scriptPath = temp.WriteFile("deploy.ps1", "Write-Host 'deploying'");
 
-        var inputFileInfo = new FileInfo(csprojPath);
-        var allFiles = new List<FileInfo> { new(csprojPath), new(programPath), new(configPath), new(readmePath) };
+		var inputFileInfo = new FileInfo(csprojPath);
+		var allFiles = new List<FileInfo> { new(csprojPath), new(programPath), new(configPath), new(readmePath) };
 
-        return new ReportRenderRequest
-        {
-            ProjectName = "MyApp",
+		return new ReportRenderRequest
+		{
+			ProjectName = "MyApp",
 			InputFileInfo = inputFileInfo,
-            RootDir = temp.RootDirectoryInfo,
-            IsSolution = isSolution,
-            Extension = ".csproj",
-            Slim = slim,
-            ExcludeTests = excludeTests,
-            ScopeDir = scopeDir,
-            ExcludeDirs = excludeDirs ?? [],
-            AllFiles = allFiles,
-            CodeFiles = [new FileInfo(programPath)],
-            ConfigFiles = includeConfig ? [new FileInfo(configPath)] : [],
-            ReadmeFiles = includeReadme ? [new FileInfo(readmePath)] : [],
-            ProjFiles = [new FileInfo(csprojPath)],
-        };
-    }
+			RootDir = temp.RootDirectoryInfo,
+			IsSolution = isSolution,
+			Extension = ".csproj",
+			Slim = slim,
+			ExcludeTests = excludeTests,
+			ScopeDir = scopeDir,
+			ExcludeDirs = excludeDirs ?? [],
+			AllFiles = allFiles,
+			CodeFiles = [new FileInfo(programPath)],
+			ConfigFiles = includeConfig ? [new FileInfo(configPath)] : [],
+			ScriptFiles = includeScript ? [new FileInfo(scriptPath)] : [],
+			ReadmeFiles = includeReadme ? [new FileInfo(readmePath)] : [],
+			ProjFiles = [new FileInfo(csprojPath)],
+		};
+	}
 
 	[Test]
 	public void Render_HeaderShowsProjectName_AndKind()
@@ -261,6 +264,7 @@ public class MarkdownReportRendererIntegrationTests
 			AllFiles = [new FileInfo(csprojPath), new FileInfo(programPath)],
 			CodeFiles = [new FileInfo(programPath)],
 			ConfigFiles = [],
+            ScriptFiles = [],
 			ReadmeFiles = [new FileInfo(externalReadmePath)],
 			ProjFiles = [new FileInfo(csprojPath)],
 		};
@@ -308,6 +312,7 @@ public class MarkdownReportRendererIntegrationTests
 			AllFiles = [new FileInfo(packageJsonPath)],
 			CodeFiles = [],
 			ConfigFiles = [],
+			ScriptFiles = [],
 			ReadmeFiles = [],
 			ProjFiles = [new FileInfo(packageJsonPath)],
 		};
@@ -315,5 +320,33 @@ public class MarkdownReportRendererIntegrationTests
 		var (output, _) = MarkdownReportRenderer.Render(request);
 
 		Assert.That(output, Does.StartWith("# bookwings - App Project"));
+	}
+
+	[Test]
+	public void Render_Scripts_UsesPowershellFenceAndSitsBetweenConfigAndCode()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, includeScript: true);
+
+		var (output, _) = MarkdownReportRenderer.Render(request);
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(output, Does.Contain("## Scripts"));
+			Assert.That(output, Does.Contain("```powershell"));
+			Assert.That(output.IndexOf("## Scripts", StringComparison.Ordinal), Is.GreaterThan(output.IndexOf("## Configuration", StringComparison.Ordinal)));
+			Assert.That(output.IndexOf("## Scripts", StringComparison.Ordinal), Is.LessThan(output.IndexOf("## App Code", StringComparison.Ordinal)));
+		}
+	}
+
+	[Test]
+	public void Render_NoScriptFiles_OmitsScriptsSection()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
+
+		var (output, _) = MarkdownReportRenderer.Render(request);
+
+		Assert.That(output, Does.Not.Contain("## Scripts"));
 	}
 }

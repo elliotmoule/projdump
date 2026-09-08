@@ -88,6 +88,14 @@ public sealed class ReactNativeProjectAnalyzer : IProjectAnalyzer
 			.Select(f => new FileEntry { File = f, Role = classifier.AssignRole(f, TestFileDetector) })
 			.ToList();
 
+		var scriptFiles = allFileInfos
+			.Where(ScriptFileClassifier.IsScriptFile)
+			.OrderBy(f => ScriptFileClassifier.ScriptFilePriority(f, rootDir))
+			.ThenBy(f => f.DirectoryName)
+			.ThenBy(f => f.Name)
+			.Select(f => new FileEntry { File = f, Role = classifier.AssignRole(f, TestFileDetector) })
+			.ToList();
+
 		var readmeFiles = allFileInfos
 			.Where(f => f.Extension.Equals(".md", StringComparison.OrdinalIgnoreCase))
 			.Select(f => new FileEntry { File = f, Role = classifier.AssignRole(f, TestFileDetector) })
@@ -108,6 +116,7 @@ public sealed class ReactNativeProjectAnalyzer : IProjectAnalyzer
 			AllFiles = allFiles,
 			CodeFiles = codeFiles,
 			ConfigFiles = configFiles,
+			ScriptFiles = scriptFiles,
 			ReadmeFiles = readmeFiles,
 			ProjFiles = projFiles,
 		};

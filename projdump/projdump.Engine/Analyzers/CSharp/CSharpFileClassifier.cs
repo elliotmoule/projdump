@@ -72,7 +72,10 @@ static class CSharpFileClassifier
         if (f.Extension.Equals(".md", StringComparison.OrdinalIgnoreCase))
             return FileRole.Doc;
 
-        if (IsConfigFile(f))
+		if (ScriptFileClassifier.IsScriptFile(f))
+			return FileRole.Script;
+
+		if (IsConfigFile(f))
             return FileRole.Config;
 
         if (EntryPointNames.Contains(f.Name, StringComparer.OrdinalIgnoreCase))

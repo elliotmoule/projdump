@@ -87,6 +87,14 @@ public sealed class CSharpAnalyzer : IProjectAnalyzer
             .Select(f => new FileEntry { File = f, Role = CSharpFileClassifier.AssignRole(f, TestFileDetector) })
             .ToList();
 
+		var scriptFiles = allFileInfos
+			.Where(ScriptFileClassifier.IsScriptFile)
+			.OrderBy(f => ScriptFileClassifier.ScriptFilePriority(f, rootDir))
+			.ThenBy(f => f.DirectoryName)
+			.ThenBy(f => f.Name)
+			.Select(f => new FileEntry { File = f, Role = CSharpFileClassifier.AssignRole(f, TestFileDetector) })
+			.ToList();
+
 		var readmeFiles = allFileInfos
 			.Where(f => f.Extension.Equals(".md", StringComparison.OrdinalIgnoreCase))
 			.Select(f => new FileEntry { File = f, Role = CSharpFileClassifier.AssignRole(f, TestFileDetector) })
@@ -114,7 +122,8 @@ public sealed class CSharpAnalyzer : IProjectAnalyzer
             AllFiles = allFiles,
             CodeFiles = codeFiles,
             ConfigFiles = configFiles,
-            ReadmeFiles = readmeFiles,
+			ScriptFiles = scriptFiles,
+			ReadmeFiles = readmeFiles,
             ProjFiles = projFiles,
         };
     }

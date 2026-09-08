@@ -428,4 +428,37 @@ public class CSharpAnalyzerIntegrationTests
         Assert.Throws<ProjectAnalysisException>(() =>
             new CSharpAnalyzer().Analyze(temp.RootPath, new ProjectAnalysisOptions()));
     }
+
+	[Test]
+	public void Analyze_PowerShellScript_LandsInScriptFilesNotCodeFiles()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildBasicProject(temp);
+		temp.WriteFile("deploy.ps1", "Write-Host 'deploying'");
+
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(analysis.ScriptFiles.Select(f => f.File.Name), Does.Contain("deploy.ps1"));
+			Assert.That(analysis.CodeFiles.Select(f => f.File.Name), Does.Not.Contain("deploy.ps1"));
+			Assert.That(analysis.ScriptFiles.Single().Role, Is.EqualTo(FileRole.Script));
+		}
+	}
+
+	[Test]
+	public void Analyze_OrdersScriptFiles_RootLevelBeforeNested()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildBasicProject(temp);
+		temp.WriteFile(Path.Combine("src", "Api", "seed.sh"), "#!/bin/sh");
+		temp.WriteFile(Path.Combine("scripts", "publish.ps1"), "# publish");
+		temp.WriteFile("build.cmd", "@echo off");
+
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+		Assert.That(
+			analysis.ScriptFiles.Select(f => f.File.Name),
+			Is.EqualTo(new[] { "build.cmd", "publish.ps1", "seed.sh" }));
+	}
 }

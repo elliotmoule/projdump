@@ -2,30 +2,33 @@
 
 static class FormatHelpers
 {
-    public static string FormatFileSize(long bytes) => bytes switch
-    {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-        _ => $"{bytes / (1024.0 * 1024):F1} MB",
-    };
+	public static string FormatFileSize(long bytes) => bytes switch
+	{
+		< 1024 => $"{bytes} B",
+		< 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+		_ => $"{bytes / (1024.0 * 1024):F1} MB",
+	};
 
-    public static string GetMarkdownLanguage(string extension) => extension.ToLower() switch
-    {
-        ".cs" => "csharp",
-        ".xaml" or ".csproj" or ".slnx" => "xml",
-        ".xml" or ".config" or ".app" => "xml",
-        ".cshtml" => "razor",
-        ".css" => "css",
-        ".scss" => "scss",
-        ".sass" => "sass",
-        ".less" => "less",
-        ".js" => "javascript",
-        ".jsx" => "jsx",
-        ".ts" => "typescript",
-        ".tsx" => "tsx",
-        ".vue" => "vue",
-        ".json" => "json",
-        ".yml" or ".yaml" => "yaml",
-        _ => "text"
-    };
+	public static string GetMarkdownLanguage(string extension) => extension.ToLower() switch
+	{
+		".cs" => "csharp",
+		".xaml" or ".csproj" or ".slnx" => "xml",
+		".xml" or ".config" or ".app" => "xml",
+		".cshtml" => "razor",
+		".css" => "css",
+		".scss" => "scss",
+		".sass" => "sass",
+		".less" => "less",
+		".js" => "javascript",
+		".jsx" => "jsx",
+		".ts" => "typescript",
+		".tsx" => "tsx",
+		".vue" => "vue",
+		".json" => "json",
+		".yml" or ".yaml" => "yaml",
+		".ps1" or ".psm1" or ".psd1" => "powershell",
+		".bat" or ".cmd" => "batch",
+		".sh" or ".bash" or ".zsh" => "bash",
+		_ => "text"
+	};
 }

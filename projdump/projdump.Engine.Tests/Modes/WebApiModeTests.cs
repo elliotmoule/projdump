@@ -52,4 +52,16 @@ public class WebApiModeTests
     {
         Assert.That(new WebApiMode().ModeKey, Is.EqualTo("webapi"));
     }
+
+	[Test]
+	public void Apply_KeepsScriptFiles()
+	{
+		// Build and deploy scripts describe how the API runs, so webapi mode leaves them alone.
+		var analysis = ProjectAnalysisFactory.Create(
+			ProjectAnalysisFactory.Entry("deploy.ps1", FileRole.Script));
+
+		var result = new WebApiMode().Apply(analysis);
+
+		Assert.That(result.AllFiles, Has.Count.EqualTo(1));
+	}
 }

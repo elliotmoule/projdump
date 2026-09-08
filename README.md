@@ -26,8 +26,11 @@ Point `projdump` at a C# solution/project (or a folder containing one), a Vue pr
 - **Solution configuration** — the `.sln`/`.slnx` file itself (C# solutions only)
 - **Project dependencies** — `.csproj` contents, or `package.json` for Vue and React Native
 - **Configuration files** — `appsettings.json`, `vite.config.ts`, `metro.config.js`, `.env`, and other well-known config files
+- **Scripts** — PowerShell, batch, and shell scripts (`.ps1`, `.bat`, `.cmd`, `.sh` and friends), root-level ones first
 - **App code** — source files ordered by significance (entry points → routing/state → models → components → everything else)
 - **Token estimate** — a rough token count in the header so you know if you're within context window budget before pasting
+
+Scripts sit between configuration and app code on purpose: how a project is built, run, and deployed is usually more valuable context than any single source file, but less foundational than its configuration.
 
 It supports three project types out of the box — C#, Vue, and React Native — and a focus **mode** that trims the report to a specific concern (currently a WebAPI mode for C#). Both are designed to be extended without touching the rest of the tool.
 
@@ -170,12 +173,13 @@ To keep the output clean and token-efficient, the following are always skipped:
 | Packager output (RN) | `*.bundle`, `*.jsbundle` |
 | Machine-specific / secrets (RN) | `local.properties`, `*.keystore` |
 | Template boilerplate (RN) | `reset-project.js`, `.tsc-output.txt` |
+| Gradle wrapper scripts (RN) | `gradlew`, `gradlew.bat` |
 
 With `--exclude-tests`, these are also dropped: `Tests/`, `Test/`, `Specs/`, `UnitTests/`, `IntegrationTests/`, `__tests__/`, `__mocks__/`, `__snapshots__/`, `e2e/` folders, plus `*Tests.cs`, `*Spec.cs`, `*.spec.ts`, `*.test.js` and similar naming conventions.
 
 Hand-written native source in a React Native project is deliberately **kept** — `MainActivity.kt`, `AppDelegate.mm`, `Info.plist`, `build.gradle`, and `Podfile` all survive, since they carry permissions, bundle IDs, and native module wiring. Only build output and vendored dependencies are dropped. If you want the native projects gone entirely, `--exclude-dir android --exclude-dir ios` does it.
 
-With `--mode webapi`, files get one more layer of filtering on top of the above: anything tagged `Component`, `Style`, or `Asset` (XAML/Razor views, CSS, and images/fonts) is dropped, since it's UI concern rather than API surface. Hand-written JavaScript under something like `wwwroot/js` is deliberately *not* dropped by this — it might genuinely be relevant to how the API gets called, and there's no reliable way to tell "hand-written" from "vendored" by role alone. If you want the whole thing gone regardless, `--exclude-dir wwwroot` removes it entirely, no matter what's in it.
+With `--mode webapi`, files get one more layer of filtering on top of the above: anything tagged `Component`, `Style`, or `Asset` (XAML/Razor views, CSS, and images/fonts) is dropped, since it's UI concern rather than API surface. Hand-written JavaScript under something like `wwwroot/js` is deliberately *not* dropped by this — it might genuinely be relevant to how the API gets called, and there's no reliable way to tell "hand-written" from "vendored" by role alone. If you want the whole thing gone regardless, `--exclude-dir wwwroot` removes it entirely, no matter what's in it. Scripts are not filtered by `webapi` — a deploy or migration script describes how the API runs, so it stays regardless of mode.
 
 ## Building
 
@@ -272,7 +276,8 @@ To add support for a new stack:
 2. Write a `CanHandle` check (extension, marker file, folder contents — whatever identifies your stack).
 3. In `Analyze`, gather files and tag each one with a `FileRole` (`EntryPoint`, `ApiSurface`, `Component`, etc.) — that's what lets report modes filter intelligently without knowing anything about your stack.
 4. Call `AncestorReadmeLocator.AddNearestReadme(readmeFiles, inputFileInfo.Directory, options.SearchForReadme)` after gathering, so your type gets the same README handling as the others for free. Pass the *input file's* directory rather than `rootDir` — `--scope` reassigns `rootDir`, which would move where the ancestor walk starts.
-5. Add it to `Analyzers/AnalyzerCatalog.cs`. That's the only registration point — the CLI derives its `--type` list, interactive prompt, and help text from the registry, so nothing else needs editing.
+5. Gather scripts with `ScriptFileClassifier.IsScriptFile` and order them with `ScriptFilePriority` — shell and automation scripts look the same in every ecosystem, so there's nothing stack-specific to write.
+6. Add it to `Analyzers/AnalyzerCatalog.cs`. That's the only registration point — the CLI derives its `--type` list, interactive prompt, and help text from the registry, so nothing else needs editing.
 
 Alongside the analyzer, most stacks want three companions in the same folder: a `<YourType>ExclusionFilter` for build output and dependencies, a `<YourType>TestFileDetector` for that ecosystem's test conventions, and a `<YourType>FileClassifier` holding the role assignment and code-ordering rules. Compose the filters with the shared ones in `Core/Filters/` rather than duplicating them.
 
@@ -293,6 +298,7 @@ The renderer, the mode system, and the CLI/interactive layer are all written aga
 ## Solution Configuration
 ## Project Dependencies
 ## Configuration
+## Scripts
 ## App Code
 ```
 

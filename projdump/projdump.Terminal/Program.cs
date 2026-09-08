@@ -448,7 +448,8 @@ class Program
             AllFiles = [.. analysis.AllFiles.Select(e => e.File)],
             CodeFiles = [.. analysis.CodeFiles.Select(e => e.File)],
             ConfigFiles = [.. analysis.ConfigFiles.Select(e => e.File)],
-            ReadmeFiles = [.. analysis.ReadmeFiles.Select(e => e.File)],
+			ScriptFiles = [.. analysis.ScriptFiles.Select(e => e.File)],
+			ReadmeFiles = [.. analysis.ReadmeFiles.Select(e => e.File)],
             ProjFiles = [.. analysis.ProjFiles.Select(e => e.File)],
         };
 

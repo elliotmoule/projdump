@@ -35,8 +35,15 @@ public class FormatHelpersTests
     [TestCase(".json", "json")]
     [TestCase(".yml", "yaml")]
     [TestCase(".yaml", "yaml")]
-    [TestCase(".unknown", "text")]
-    public void GetMarkdownLanguage_ReturnsExpectedLanguage(string extension, string expected)
+	[TestCase(".ps1", "powershell")]
+	[TestCase(".psm1", "powershell")]
+	[TestCase(".psd1", "powershell")]
+	[TestCase(".bat", "batch")]
+	[TestCase(".cmd", "batch")]
+	[TestCase(".sh", "bash")]
+	[TestCase(".bash", "bash")]
+	[TestCase(".zsh", "bash")]
+	public void GetMarkdownLanguage_ReturnsExpectedLanguage(string extension, string expected)
     {
         Assert.That(FormatHelpers.GetMarkdownLanguage(extension), Is.EqualTo(expected));
     }
