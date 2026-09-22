@@ -27,10 +27,11 @@ Point `projdump` at a C# solution/project (or a folder containing one), a Vue pr
 - **Project dependencies** — `.csproj` contents, or `package.json` for Vue and React Native
 - **Configuration files** — `appsettings.json`, `vite.config.ts`, `metro.config.js`, `.env`, and other well-known config files
 - **Scripts** — PowerShell, batch, and shell scripts (`.ps1`, `.bat`, `.cmd`, `.sh` and friends), root-level ones first
+- **Database** — `.sql` files (schema, procedures, seed data), root-level ones first- 
 - **App code** — source files ordered by significance (entry points → routing/state → models → components → everything else)
 - **Token estimate** — a rough token count in the header so you know if you're within context window budget before pasting
 
-Scripts sit between configuration and app code on purpose: how a project is built, run, and deployed is usually more valuable context than any single source file, but less foundational than its configuration.
+Scripts and database files sit between configuration and app code on purpose: how a project is built, run, deployed, and shaped in the database is usually more valuable context than any single source file, but less foundational than its configuration. Generated EF migrations are excluded, so a `.sql` that survives is one someone put there deliberately.
 
 It supports three project types out of the box — C#, Vue, and React Native — and a focus **mode** that trims the report to a specific concern (currently a WebAPI mode for C#). Both are designed to be extended without touching the rest of the tool.
 
@@ -299,6 +300,7 @@ The renderer, the mode system, and the CLI/interactive layer are all written aga
 ## Project Dependencies
 ## Configuration
 ## Scripts
+## Database
 ## App Code
 ```
 

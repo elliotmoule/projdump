@@ -13,24 +13,27 @@ public sealed class ProjectAnalysis
 	public required IReadOnlyList<FileEntry> CodeFiles { get; init; }
 	public required IReadOnlyList<FileEntry> ConfigFiles { get; init; }
 	public required IReadOnlyList<FileEntry> ScriptFiles { get; init; }
+	public required IReadOnlyList<FileEntry> SqlFiles { get; init; }
 	public required IReadOnlyList<FileEntry> ReadmeFiles { get; init; }
 	public required IReadOnlyList<FileEntry> ProjFiles { get; init; }
 
 	/// <summary>
-	/// Produces a copy of this analysis carrying replacement file collections.
+	/// Produces a copy of the analysis carrying a different set of files, leaving project identity untouched.
 	/// </summary>
-	/// <param name="allFiles">Every file surviving discovery and exclusion.</param>
-	/// <param name="codeFiles">Application code, in render order.</param>
+	/// <param name="allFiles">Every gathered file, used for the summary and structure sections.</param>
+	/// <param name="codeFiles">Application source files, in render order.</param>
 	/// <param name="configFiles">Configuration files.</param>
-	/// <param name="scriptFiles">Shell and automation scripts, in render order.</param>
+	/// <param name="scriptFiles">Shell and automation scripts.</param>
+	/// <param name="sqlFiles">SQL scripts.</param>
 	/// <param name="readmeFiles">Documentation files.</param>
-	/// <param name="projFiles">Solution and project files.</param>
-	/// <returns>A new analysis with identical metadata and the supplied collections.</returns>
+	/// <param name="projFiles">Project and dependency manifest files.</param>
+	/// <returns>A new analysis with the supplied file lists.</returns>
 	public ProjectAnalysis WithFiles(
 		IReadOnlyList<FileEntry> allFiles,
 		IReadOnlyList<FileEntry> codeFiles,
 		IReadOnlyList<FileEntry> configFiles,
 		IReadOnlyList<FileEntry> scriptFiles,
+		IReadOnlyList<FileEntry> sqlFiles,
 		IReadOnlyList<FileEntry> readmeFiles,
 		IReadOnlyList<FileEntry> projFiles) => new()
 		{
@@ -43,6 +46,7 @@ public sealed class ProjectAnalysis
 			CodeFiles = codeFiles,
 			ConfigFiles = configFiles,
 			ScriptFiles = scriptFiles,
+			SqlFiles = sqlFiles,
 			ReadmeFiles = readmeFiles,
 			ProjFiles = projFiles,
 		};

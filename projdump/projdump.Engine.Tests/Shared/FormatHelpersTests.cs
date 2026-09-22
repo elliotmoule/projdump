@@ -43,6 +43,7 @@ public class FormatHelpersTests
 	[TestCase(".sh", "bash")]
 	[TestCase(".bash", "bash")]
 	[TestCase(".zsh", "bash")]
+    [TestCase(".sql", "sql")]
 	public void GetMarkdownLanguage_ReturnsExpectedLanguage(string extension, string expected)
     {
         Assert.That(FormatHelpers.GetMarkdownLanguage(extension), Is.EqualTo(expected));

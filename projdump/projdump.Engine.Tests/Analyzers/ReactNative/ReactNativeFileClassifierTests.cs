@@ -202,6 +202,12 @@ public class ReactNativeFileClassifierTests
 	}
 
 	[Test]
+	public void AssignRole_ReturnsSql_ForSqlFile()
+	{
+		Assert.That(Classifier.AssignRole(NestedFile("db", "schema.sql"), NeverTest), Is.EqualTo(FileRole.Sql));
+	}
+
+	[Test]
 	public void AssignRole_ReturnsStyle_ForCss()
 	{
 		Assert.That(Classifier.AssignRole(NestedFile("src", "theme.css"), NeverTest), Is.EqualTo(FileRole.Style));

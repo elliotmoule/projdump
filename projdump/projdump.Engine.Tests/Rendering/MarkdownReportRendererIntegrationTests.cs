@@ -15,13 +15,15 @@ public class MarkdownReportRendererIntegrationTests
 		IReadOnlyList<string>? excludeDirs = null,
 		bool includeReadme = true,
 		bool includeConfig = true,
-		bool includeScript = false)
+		bool includeScript = false,
+		bool includeSql = false)
 	{
 		string csprojPath = temp.WriteFile("MyApp.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
 		string programPath = temp.WriteFile("Program.cs", "var builder = WebApplication.CreateBuilder(args);");
 		string configPath = temp.WriteFile("appsettings.json", "{ \"Key\": \"Value\" }");
 		string readmePath = temp.WriteFile("README.md", "# MyApp\n\nSample readme content.");
 		string scriptPath = temp.WriteFile("deploy.ps1", "Write-Host 'deploying'");
+		string sqlPath = temp.WriteFile("schema.sql", "CREATE TABLE Orders (Id INT PRIMARY KEY);");
 
 		var inputFileInfo = new FileInfo(csprojPath);
 		var allFiles = new List<FileInfo> { new(csprojPath), new(programPath), new(configPath), new(readmePath) };
@@ -41,6 +43,7 @@ public class MarkdownReportRendererIntegrationTests
 			CodeFiles = [new FileInfo(programPath)],
 			ConfigFiles = includeConfig ? [new FileInfo(configPath)] : [],
 			ScriptFiles = includeScript ? [new FileInfo(scriptPath)] : [],
+			SqlFiles = includeSql ? [new FileInfo(sqlPath)] : [],
 			ReadmeFiles = includeReadme ? [new FileInfo(readmePath)] : [],
 			ProjFiles = [new FileInfo(csprojPath)],
 		};
@@ -58,186 +61,226 @@ public class MarkdownReportRendererIntegrationTests
 	}
 
 	[Test]
-    public void Render_SlimMode_AddsModeLabelAndNote()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false, slim: true);
+	public void Render_SlimMode_AddsModeLabelAndNote()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, slim: true);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Contain("App Project (slim)"));
-        Assert.That(output, Does.Contain("**Slim mode:** file contents are omitted"));
-    }
+		Assert.That(output, Does.Contain("App Project (slim)"));
+		Assert.That(output, Does.Contain("**Slim mode:** file contents are omitted"));
+	}
 
-    [Test]
-    public void Render_SlimMode_ShowsFileSizeInsteadOfContent()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false, slim: true);
+	[Test]
+	public void Render_SlimMode_ShowsFileSizeInsteadOfContent()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, slim: true);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Contain("_File size:"));
-        Assert.That(output, Does.Not.Contain("WebApplication.CreateBuilder"));
-    }
+		Assert.That(output, Does.Contain("_File size:"));
+		Assert.That(output, Does.Not.Contain("WebApplication.CreateBuilder"));
+	}
 
-    [Test]
-    public void Render_NonSlimMode_IncludesRealFileContent()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false, slim: false);
+	[Test]
+	public void Render_NonSlimMode_IncludesRealFileContent()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, slim: false);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Contain("WebApplication.CreateBuilder"));
-        Assert.That(output, Does.Contain("Sample readme content."));
-    }
+		Assert.That(output, Does.Contain("WebApplication.CreateBuilder"));
+		Assert.That(output, Does.Contain("Sample readme content."));
+	}
 
-    [Test]
-    public void Render_ReplacesTokenPlaceholder_WithRealEstimate()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false);
+	[Test]
+	public void Render_ReplacesTokenPlaceholder_WithRealEstimate()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
 
-        var (output, estimatedTokens) = MarkdownReportRenderer.Render(request);
+		var (output, estimatedTokens) = MarkdownReportRenderer.Render(request);
 
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(output, Does.Not.Contain("~4,849"));
-            Assert.That(output, Does.Contain($"~{estimatedTokens:N0}"));
-            Assert.That(estimatedTokens, Is.GreaterThan(0));
-        }
-    }
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(output, Does.Not.Contain("~4,849"));
+			Assert.That(output, Does.Contain($"~{estimatedTokens:N0}"));
+			Assert.That(estimatedTokens, Is.GreaterThan(0));
+		}
+	}
 
-    [Test]
-    public void Render_FlagsNote_ListsActiveFlags()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false, slim: true, excludeTests: true, scopeDir: "src", excludeDirs: ["wwwroot", "docs"]);
+	[Test]
+	public void Render_FlagsNote_ListsActiveFlags()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, slim: true, excludeTests: true, scopeDir: "src", excludeDirs: ["wwwroot", "docs"]);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Contain("**Flags:**"));
-        Assert.That(output, Does.Contain("`--slim`"));
-        Assert.That(output, Does.Contain("`--exclude-tests`"));
-        Assert.That(output, Does.Contain("`--scope src`"));
-        Assert.That(output, Does.Contain("`--exclude-dir wwwroot`"));
-        Assert.That(output, Does.Contain("`--exclude-dir docs`"));
-    }
+		Assert.That(output, Does.Contain("**Flags:**"));
+		Assert.That(output, Does.Contain("`--slim`"));
+		Assert.That(output, Does.Contain("`--exclude-tests`"));
+		Assert.That(output, Does.Contain("`--scope src`"));
+		Assert.That(output, Does.Contain("`--exclude-dir wwwroot`"));
+		Assert.That(output, Does.Contain("`--exclude-dir docs`"));
+	}
 
-    [Test]
-    public void Render_NoFlagsSet_OmitsFlagsNote()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false);
+	[Test]
+	public void Render_NoFlagsSet_OmitsFlagsNote()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Not.Contain("**Flags:**"));
-    }
+		Assert.That(output, Does.Not.Contain("**Flags:**"));
+	}
 
-    [Test]
-    public void Render_ProjectSummary_CountsFilesByExtension()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false);
+	[Test]
+	public void Render_ProjectSummary_CountsFilesByExtension()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Contain("| .cs | 1 |"));
-        Assert.That(output, Does.Contain("| .csproj | 1 |"));
-        Assert.That(output, Does.Contain("| .json | 1 |"));
-        Assert.That(output, Does.Contain("| .md | 1 |"));
-    }
+		Assert.That(output, Does.Contain("| .cs | 1 |"));
+		Assert.That(output, Does.Contain("| .csproj | 1 |"));
+		Assert.That(output, Does.Contain("| .json | 1 |"));
+		Assert.That(output, Does.Contain("| .md | 1 |"));
+	}
 
-    [Test]
-    public void Render_ProjectStructure_ListsPathsRelativeToRoot()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false);
+	[Test]
+	public void Render_ProjectStructure_ListsPathsRelativeToRoot()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Contain("## Project Structure"));
-        Assert.That(output, Does.Contain("Program.cs"));
-        Assert.That(output, Does.Not.Contain(temp.RootPath)); // must be relative, not absolute
-    }
+		Assert.That(output, Does.Contain("## Project Structure"));
+		Assert.That(output, Does.Contain("Program.cs"));
+		Assert.That(output, Does.Not.Contain(temp.RootPath)); // must be relative, not absolute
+	}
 
-    [Test]
-    public void Render_SolutionConfiguration_OnlyAppearsWhenIsSolution()
-    {
-        using var temp = new TempProjectDirectory();
-        var solutionRequest = BuildRequest(temp, isSolution: true);
-        var projectRequest = BuildRequest(temp, isSolution: false);
+	[Test]
+	public void Render_SolutionConfiguration_OnlyAppearsWhenIsSolution()
+	{
+		using var temp = new TempProjectDirectory();
+		var solutionRequest = BuildRequest(temp, isSolution: true);
+		var projectRequest = BuildRequest(temp, isSolution: false);
 
-        var (solutionOutput, _) = MarkdownReportRenderer.Render(solutionRequest);
-        var (projectOutput, _) = MarkdownReportRenderer.Render(projectRequest);
+		var (solutionOutput, _) = MarkdownReportRenderer.Render(solutionRequest);
+		var (projectOutput, _) = MarkdownReportRenderer.Render(projectRequest);
 
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(solutionOutput, Does.Contain("## Solution Configuration"));
-            Assert.That(projectOutput, Does.Not.Contain("## Solution Configuration"));
-        }
-    }
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(solutionOutput, Does.Contain("## Solution Configuration"));
+			Assert.That(projectOutput, Does.Not.Contain("## Solution Configuration"));
+		}
+	}
 
-    [Test]
-    public void Render_ProjectDependencies_IncludesCsprojContentAsXml()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false);
+	[Test]
+	public void Render_ProjectDependencies_IncludesCsprojContentAsXml()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Contain("## Project Dependencies"));
-        Assert.That(output, Does.Contain("```xml"));
-        Assert.That(output, Does.Contain("Microsoft.NET.Sdk"));
-    }
+		Assert.That(output, Does.Contain("## Project Dependencies"));
+		Assert.That(output, Does.Contain("```xml"));
+		Assert.That(output, Does.Contain("Microsoft.NET.Sdk"));
+	}
 
-    [Test]
-    public void Render_Configuration_UsesCorrectLanguageForJson()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false);
+	[Test]
+	public void Render_Configuration_UsesCorrectLanguageForJson()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Contain("## Configuration"));
-        Assert.That(output, Does.Contain("```json"));
-    }
+		Assert.That(output, Does.Contain("## Configuration"));
+		Assert.That(output, Does.Contain("```json"));
+	}
 
-    [Test]
-    public void Render_AppCode_UsesCorrectLanguageForCs()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false);
+	[Test]
+	public void Render_DatabaseSection_AppearsWithSqlFenceWhenSqlFilesPresent()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, includeSql: true);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Contain("## App Code"));
-        Assert.That(output, Does.Contain("```csharp"));
-    }
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(output, Does.Contain("## Database"));
+			Assert.That(output, Does.Contain("### schema.sql"));
+			Assert.That(output, Does.Contain("```sql"));
+			Assert.That(output, Does.Contain("CREATE TABLE Orders"));
+		}
+	}
 
-    [Test]
-    public void Render_NoReadmeFiles_OmitsDocumentationSection()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false, includeReadme: false);
+	[Test]
+	public void Render_NoSqlFiles_OmitsDatabaseSection()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Not.Contain("## Documentation"));
-    }
+		Assert.That(output, Does.Not.Contain("## Database"));
+	}
 
-    [Test]
-    public void Render_NoConfigFiles_OmitsConfigurationSection()
-    {
-        using var temp = new TempProjectDirectory();
-        var request = BuildRequest(temp, isSolution: false, includeConfig: false);
+	[Test]
+	public void Render_DatabaseSection_SitsBetweenScriptsAndAppCode()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, includeScript: true, includeSql: true);
 
-        var (output, _) = MarkdownReportRenderer.Render(request);
+		var (output, _) = MarkdownReportRenderer.Render(request);
 
-        Assert.That(output, Does.Not.Contain("## Configuration"));
-    }
+		Assert.That(output.IndexOf("## Scripts", StringComparison.Ordinal), Is.LessThan(output.IndexOf("## Database", StringComparison.Ordinal)));
+		Assert.That(output.IndexOf("## Database", StringComparison.Ordinal), Is.LessThan(output.IndexOf("## App Code", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	public void Render_AppCode_UsesCorrectLanguageForCs()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
+
+		var (output, _) = MarkdownReportRenderer.Render(request);
+
+		Assert.That(output, Does.Contain("## App Code"));
+		Assert.That(output, Does.Contain("```csharp"));
+	}
+
+	[Test]
+	public void Render_NoReadmeFiles_OmitsDocumentationSection()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, includeReadme: false);
+
+		var (output, _) = MarkdownReportRenderer.Render(request);
+
+		Assert.That(output, Does.Not.Contain("## Documentation"));
+	}
+
+	[Test]
+	public void Render_NoConfigFiles_OmitsConfigurationSection()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, includeConfig: false);
+
+		var (output, _) = MarkdownReportRenderer.Render(request);
+
+		Assert.That(output, Does.Not.Contain("## Configuration"));
+	}
 
 	[Test]
 	public void Render_ExternalReadme_ShowsFullPathAndSourcedFromOutsideNote()
@@ -252,7 +295,7 @@ public class MarkdownReportRendererIntegrationTests
 
 		var request = new ReportRenderRequest
 		{
-            ProjectName = "MyApp",
+			ProjectName = "MyApp",
 			InputFileInfo = new FileInfo(csprojPath),
 			RootDir = new DirectoryInfo(temp.GetFullPath("src")),
 			IsSolution = false,
@@ -264,7 +307,8 @@ public class MarkdownReportRendererIntegrationTests
 			AllFiles = [new FileInfo(csprojPath), new FileInfo(programPath)],
 			CodeFiles = [new FileInfo(programPath)],
 			ConfigFiles = [],
-            ScriptFiles = [],
+			ScriptFiles = [],
+			SqlFiles = [],
 			ReadmeFiles = [new FileInfo(externalReadmePath)],
 			ProjFiles = [new FileInfo(csprojPath)],
 		};
@@ -313,6 +357,7 @@ public class MarkdownReportRendererIntegrationTests
 			CodeFiles = [],
 			ConfigFiles = [],
 			ScriptFiles = [],
+			SqlFiles = [],
 			ReadmeFiles = [],
 			ProjFiles = [new FileInfo(packageJsonPath)],
 		};

@@ -13,10 +13,11 @@ public sealed class ReportRenderRequest
 	public bool SearchForReadme { get; init; }
 	public string? ScopeDir { get; init; }
 	public IReadOnlyList<string> ExcludeDirs { get; init; } = [];
-	public required List<FileInfo> AllFiles { get; init; }
-	public required List<FileInfo> CodeFiles { get; init; }
-	public required List<FileInfo> ConfigFiles { get; init; }
-	public required List<FileInfo> ScriptFiles { get; init; }
-	public required List<FileInfo> ReadmeFiles { get; init; }
-	public required List<FileInfo> ProjFiles { get; init; }
+	public required IReadOnlyList<FileInfo> AllFiles { get; init; }
+	public required IReadOnlyList<FileInfo> CodeFiles { get; init; }
+	public required IReadOnlyList<FileInfo> ConfigFiles { get; init; }
+	public required IReadOnlyList<FileInfo> ScriptFiles { get; init; }
+	public required IReadOnlyList<FileInfo> SqlFiles { get; init; }
+	public required IReadOnlyList<FileInfo> ReadmeFiles { get; init; }
+	public required IReadOnlyList<FileInfo> ProjFiles { get; init; }
 }

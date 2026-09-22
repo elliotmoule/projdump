@@ -25,6 +25,7 @@ static class FormatHelpers
 		".tsx" => "tsx",
 		".vue" => "vue",
 		".json" => "json",
+		".sql" => "sql",
 		".yml" or ".yaml" => "yaml",
 		".ps1" or ".psm1" or ".psd1" => "powershell",
 		".bat" or ".cmd" => "batch",

@@ -7,7 +7,7 @@ public sealed class WebApiMode : IDumpMode
 {
 	public string ModeKey => "webapi";
 
-	// Script is deliberately absent: build and deploy scripts describe how the API runs.
+	// Script and Sql are deliberately absent: deploy scripts and schema both describe how the API runs.
 	static readonly HashSet<FileRole> ExcludedRoles = [FileRole.Component, FileRole.Style, FileRole.Asset];
 
 	/// <summary>
@@ -21,10 +21,11 @@ public sealed class WebApiMode : IDumpMode
 		var codeFiles = Filter(analysis.CodeFiles);
 		var configFiles = Filter(analysis.ConfigFiles);
 		var scriptFiles = Filter(analysis.ScriptFiles);
+		var sqlFiles = Filter(analysis.SqlFiles);
 		var readmeFiles = Filter(analysis.ReadmeFiles);
 		var projFiles = Filter(analysis.ProjFiles);
 
-		return analysis.WithFiles(allFiles, codeFiles, configFiles, scriptFiles, readmeFiles, projFiles);
+		return analysis.WithFiles(allFiles, codeFiles, configFiles, scriptFiles, sqlFiles, readmeFiles, projFiles);
 	}
 
 	static List<FileEntry> Filter(IReadOnlyList<FileEntry> files) =>

@@ -86,7 +86,20 @@ public class CSharpFileClassifierTests
         Assert.That(CSharpFileClassifier.AssignRole(new FileInfo("MainWindow.xaml"), NeverTest), Is.EqualTo(FileRole.Component));
     }
 
-    [Test]
+	[Test]
+	public void AssignRole_ReturnsSql_ForSqlFile()
+	{
+		Assert.That(CSharpFileClassifier.AssignRole(new FileInfo("schema.sql"), NeverTest), Is.EqualTo(FileRole.Sql));
+	}
+
+	[Test]
+	public void IsCodeFile_ReturnsFalse_ForSqlFile()
+	{
+		// .sql renders in its own Database section, so it must stay out of App Code.
+		Assert.That(CSharpFileClassifier.IsCodeFile(new FileInfo("schema.sql")), Is.False);
+	}
+
+	[Test]
     public void AssignRole_ReturnsStyle_ForCssFile()
     {
         Assert.That(CSharpFileClassifier.AssignRole(new FileInfo("site.css"), NeverTest), Is.EqualTo(FileRole.Style));

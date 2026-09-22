@@ -15,6 +15,7 @@ static class ProjectAnalysisFactory
 		CodeFiles = allFiles,
 		ConfigFiles = [],
 		ScriptFiles = [],
+		SqlFiles = [],
 		ReadmeFiles = [],
 		ProjFiles = [],
 	};

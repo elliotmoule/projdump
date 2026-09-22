@@ -105,7 +105,13 @@ public class VueFileClassifierTests
         Assert.That(VueFileClassifier.AssignRole(new FileInfo("OrderList.vue"), NeverTest), Is.EqualTo(FileRole.Component));
     }
 
-    [TestCase("site.css")]
+	[Test]
+	public void AssignRole_ReturnsSql_ForSqlFile()
+	{
+		Assert.That(VueFileClassifier.AssignRole(new FileInfo("schema.sql"), NeverTest), Is.EqualTo(FileRole.Sql));
+	}
+
+	[TestCase("site.css")]
     [TestCase("site.scss")]
     [TestCase("site.sass")]
     [TestCase("site.less")]

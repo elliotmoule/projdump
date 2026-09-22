@@ -215,7 +215,51 @@ public class CSharpAnalyzerIntegrationTests
         Assert.That(analysis.ProjFiles.Select(f => f.File.Name), Is.EquivalentTo(new[] { "MyApp.Api.csproj", "MyApp.Core.csproj" }));
     }
 
-    [Test]
+	[Test]
+	public void Analyze_SqlFile_LandsInSqlFilesNotCodeFiles()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildBasicProject(temp);
+		temp.WriteFile("schema.sql", "CREATE TABLE Orders (Id INT);");
+
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(analysis.SqlFiles.Select(f => f.File.Name), Does.Contain("schema.sql"));
+			Assert.That(analysis.CodeFiles.Select(f => f.File.Name), Does.Not.Contain("schema.sql"));
+			Assert.That(analysis.SqlFiles.Single().Role, Is.EqualTo(FileRole.Sql));
+		}
+	}
+
+	[Test]
+	public void Analyze_OrdersSqlFiles_RootLevelBeforeNested()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildBasicProject(temp);
+		temp.WriteFile(Path.Combine("Reporting", "monthly.sql"), "SELECT 1;");
+		temp.WriteFile("schema.sql", "CREATE TABLE Orders (Id INT);");
+
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+		Assert.That(analysis.SqlFiles.Select(f => f.File.Name), Is.EqualTo(new[] { "schema.sql", "monthly.sql" }));
+	}
+
+	[Test]
+	public void Analyze_ExcludesSqlFilesUnderMigrationsFolder()
+	{
+		// CSharpExclusionFilter drops \Migrations\ wholesale - a .sql placed anywhere
+		// else is a deliberate choice, but generated migration scripts are noise.
+		using var temp = new TempProjectDirectory();
+		string csprojPath = BuildBasicProject(temp);
+		temp.WriteFile(Path.Combine("Migrations", "0001_init.sql"), "CREATE TABLE Orders (Id INT);");
+
+		var analysis = new CSharpAnalyzer().Analyze(csprojPath, new ProjectAnalysisOptions());
+
+		Assert.That(analysis.SqlFiles, Is.Empty);
+	}
+
+	[Test]
     public void Analyze_WithExcludeTests_RemovesTestFiles()
     {
         using var temp = new TempProjectDirectory();

@@ -145,6 +145,10 @@ public static class MarkdownReportRenderer
 		if (request.ScriptFiles.Count > 0)
 			AppendFileSection(sb, "## Scripts", request.ScriptFiles, request);
 
+		// Database Scripts
+		if (request.SqlFiles.Count > 0)
+			AppendFileSection(sb, "## Database", request.SqlFiles, request);
+
 		AppendFileSection(sb, "## App Code", request.CodeFiles, request);
 
 		// Token estimate (Rough heuristic: GPT/Claude tokenisers average ~4 chars per token for code)
@@ -163,7 +167,7 @@ public static class MarkdownReportRenderer
 	/// <param name="heading">The markdown heading line, including its hashes.</param>
 	/// <param name="files">Files to render, in the order they should appear.</param>
 	/// <param name="request">The render request, for the root path and slim flag.</param>
-	static void AppendFileSection(StringBuilder sb, string heading, List<FileInfo> files, ReportRenderRequest request)
+	static void AppendFileSection(StringBuilder sb, string heading, IReadOnlyList<FileInfo> files, ReportRenderRequest request)
 	{
 		sb.AppendLine(heading);
 		sb.AppendLine();

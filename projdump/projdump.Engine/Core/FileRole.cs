@@ -1,5 +1,6 @@
 ﻿namespace projdump.Engine.Core;
 
+// Semantic role used by Modes to filter files, independent of project type.
 public enum FileRole
 {
 	EntryPoint,
@@ -7,6 +8,7 @@ public enum FileRole
 	Model,
 	Config,
 	Script,
+	Sql,
 	Doc,
 	Component,
 	Style,

@@ -138,6 +138,9 @@ sealed class ReactNativeFileClassifier
 		if (ScriptFileClassifier.IsScriptFile(f))
 			return FileRole.Script;
 
+		if (SqlFileClassifier.IsSqlFile(f))
+			return FileRole.Sql;
+
 		if (IsConfigFile(f))
 			return FileRole.Config;
 
