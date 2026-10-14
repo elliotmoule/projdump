@@ -4,6 +4,7 @@ using projdump.Engine.Tests.TestSupport;
 namespace projdump.Engine.Tests.Rendering;
 
 [TestFixture]
+[Category("Integration")]
 public class MarkdownReportRendererIntegrationTests
 {
 	static ReportRenderRequest BuildRequest(
@@ -16,7 +17,8 @@ public class MarkdownReportRendererIntegrationTests
 		bool includeReadme = true,
 		bool includeConfig = true,
 		bool includeScript = false,
-		bool includeSql = false)
+		bool includeSql = false,
+		bool includeStats = false)
 	{
 		string csprojPath = temp.WriteFile("MyApp.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
 		string programPath = temp.WriteFile("Program.cs", "var builder = WebApplication.CreateBuilder(args);");
@@ -37,6 +39,7 @@ public class MarkdownReportRendererIntegrationTests
 			Extension = ".csproj",
 			Slim = slim,
 			ExcludeTests = excludeTests,
+			IncludeStats = includeStats,
 			ScopeDir = scopeDir,
 			ExcludeDirs = excludeDirs ?? [],
 			AllFiles = allFiles,
@@ -49,13 +52,16 @@ public class MarkdownReportRendererIntegrationTests
 		};
 	}
 
+	static RenderedReport Render(ReportRenderRequest request)
+		=> ReportRendererFactory.Create().Render(request);
+
 	[Test]
 	public void Render_HeaderShowsProjectName_AndKind()
 	{
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.StartWith("# MyApp - App Project"));
 	}
@@ -66,7 +72,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false, slim: true);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Contain("App Project (slim)"));
 		Assert.That(output, Does.Contain("**Slim mode:** file contents are omitted"));
@@ -78,7 +84,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false, slim: true);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Contain("_File size:"));
 		Assert.That(output, Does.Not.Contain("WebApplication.CreateBuilder"));
@@ -90,26 +96,56 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false, slim: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Contain("WebApplication.CreateBuilder"));
 		Assert.That(output, Does.Contain("Sample readme content."));
 	}
 
 	[Test]
-	public void Render_ReplacesTokenPlaceholder_WithRealEstimate()
+	public void Render_TokenLine_ShowsTheReturnedEstimate()
 	{
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false);
 
-		var (output, estimatedTokens) = MarkdownReportRenderer.Render(request);
+		var report = Render(request);
 
 		using (Assert.EnterMultipleScope())
 		{
-			Assert.That(output, Does.Not.Contain("~4,849"));
-			Assert.That(output, Does.Contain($"~{estimatedTokens:N0}"));
-			Assert.That(estimatedTokens, Is.GreaterThan(0));
+			Assert.That(report.Markdown, Does.Contain($"**Estimated tokens:** ~{report.EstimatedTokens:N0}"));
+			Assert.That(report.EstimatedTokens, Is.GreaterThan(0));
 		}
+	}
+
+	[Test]
+	public void Render_TokenLine_NamesTheEstimationMethodWithoutAnEmDash()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
+
+		string tokenLine = Render(request).Markdown
+			.Split(Environment.NewLine)
+			.Single(line => line.StartsWith("> **Estimated tokens:**", StringComparison.Ordinal));
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(tokenLine, Does.Contain("character count ÷ 4"));
+			Assert.That(tokenLine, Does.Not.Contain("\u2014"));
+		}
+	}
+
+	[Test]
+	public void Render_FileContentContainingATokenLine_LeavesTheContentUntouched()
+	{
+		// Regression: the header used to be filled in with output.Replace, which also rewrote matching text inside dumped files.
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
+		const string embeddedTokenLine = "> **Estimated tokens:** ~1  _(character count ÷ 4, treat as a rough guide)_";
+		File.WriteAllText(temp.GetFullPath("Program.cs"), embeddedTokenLine);
+
+		string output = Render(request).Markdown;
+
+		Assert.That(output, Does.Contain(embeddedTokenLine));
 	}
 
 	[Test]
@@ -118,7 +154,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false, slim: true, excludeTests: true, scopeDir: "src", excludeDirs: ["wwwroot", "docs"]);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Contain("**Flags:**"));
 		Assert.That(output, Does.Contain("`--slim`"));
@@ -134,9 +170,74 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Not.Contain("**Flags:**"));
+	}
+
+	[Test]
+	public void Render_IncludeStatsOff_OmitsStatisticsBlock()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
+
+		string output = Render(request).Markdown;
+
+		Assert.That(output, Does.Not.Contain("## Token Statistics"));
+	}
+
+	[Test]
+	public void Render_IncludeStatsOn_PlacesStatisticsBlockBeforeProjectSummary()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, includeStats: true);
+
+		string output = Render(request).Markdown;
+
+		Assert.That(output.IndexOf("## Token Statistics", StringComparison.Ordinal), Is.GreaterThan(-1));
+		Assert.That(output.IndexOf("## Token Statistics", StringComparison.Ordinal), Is.LessThan(output.IndexOf("## Project Summary", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	public void Render_IncludeStatsOn_ListsFlagInFlagsNote()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, includeStats: true);
+
+		string output = Render(request).Markdown;
+
+		Assert.That(output, Does.Contain("`--include-stats`"));
+	}
+
+	[Test]
+	public void Render_StandardProject_RecordsEachRenderedFileUnderItsSection()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
+
+		var fileSections = Render(request).Statistics.Files.ToDictionary(file => file.RelativePath, file => file.SectionName);
+
+		Assert.That(fileSections, Is.EquivalentTo(new Dictionary<string, string>
+		{
+			["README.md"] = "Documentation",
+			["MyApp.csproj"] = "Project Dependencies",
+			["appsettings.json"] = "Configuration",
+			["Program.cs"] = "App Code",
+		}));
+	}
+
+	[Test]
+	public void Render_StandardProject_RecordsSectionsInRenderOrder()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false);
+
+		var sectionNames = Render(request).Statistics.Sections.Select(section => section.SectionName);
+
+		Assert.That(sectionNames, Is.EqualTo(new[]
+		{
+			"Project Summary", "Project Structure", "Documentation", "Project Dependencies", "Configuration", "App Code",
+		}));
 	}
 
 	[Test]
@@ -145,7 +246,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Contain("| .cs | 1 |"));
 		Assert.That(output, Does.Contain("| .csproj | 1 |"));
@@ -159,7 +260,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Contain("## Project Structure"));
 		Assert.That(output, Does.Contain("Program.cs"));
@@ -173,8 +274,8 @@ public class MarkdownReportRendererIntegrationTests
 		var solutionRequest = BuildRequest(temp, isSolution: true);
 		var projectRequest = BuildRequest(temp, isSolution: false);
 
-		var (solutionOutput, _) = MarkdownReportRenderer.Render(solutionRequest);
-		var (projectOutput, _) = MarkdownReportRenderer.Render(projectRequest);
+		string solutionOutput = Render(solutionRequest).Markdown;
+		string projectOutput = Render(projectRequest).Markdown;
 
 		using (Assert.EnterMultipleScope())
 		{
@@ -189,11 +290,40 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Contain("## Project Dependencies"));
 		Assert.That(output, Does.Contain("```xml"));
 		Assert.That(output, Does.Contain("Microsoft.NET.Sdk"));
+	}
+
+	[Test]
+	public void Render_ProjectDependencies_FencesPackageJsonAsJson()
+	{
+		using var temp = new TempProjectDirectory();
+		string packageJsonPath = temp.WriteFile("package.json", """{ "name": "bookwings" }""");
+
+		var request = new ReportRenderRequest
+		{
+			InputFileInfo = new FileInfo(packageJsonPath),
+			RootDir = temp.RootDirectoryInfo,
+			IsSolution = false,
+			Extension = ".json",
+			ProjectName = "bookwings",
+			Slim = false,
+			ExcludeTests = false,
+			AllFiles = [new FileInfo(packageJsonPath)],
+			CodeFiles = [],
+			ConfigFiles = [],
+			ScriptFiles = [],
+			SqlFiles = [],
+			ReadmeFiles = [],
+			ProjFiles = [new FileInfo(packageJsonPath)],
+		};
+
+		string output = Render(request).Markdown;
+
+		Assert.That(output, Does.Contain("```json"));
 	}
 
 	[Test]
@@ -202,7 +332,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Contain("## Configuration"));
 		Assert.That(output, Does.Contain("```json"));
@@ -214,7 +344,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false, includeSql: true);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		using (Assert.EnterMultipleScope())
 		{
@@ -231,7 +361,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Not.Contain("## Database"));
 	}
@@ -242,7 +372,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false, includeScript: true, includeSql: true);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output.IndexOf("## Scripts", StringComparison.Ordinal), Is.LessThan(output.IndexOf("## Database", StringComparison.Ordinal)));
 		Assert.That(output.IndexOf("## Database", StringComparison.Ordinal), Is.LessThan(output.IndexOf("## App Code", StringComparison.Ordinal)));
@@ -254,7 +384,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Contain("## App Code"));
 		Assert.That(output, Does.Contain("```csharp"));
@@ -266,7 +396,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false, includeReadme: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Not.Contain("## Documentation"));
 	}
@@ -277,7 +407,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false, includeConfig: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Not.Contain("## Configuration"));
 	}
@@ -313,7 +443,7 @@ public class MarkdownReportRendererIntegrationTests
 			ProjFiles = [new FileInfo(csprojPath)],
 		};
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		using (Assert.EnterMultipleScope())
 		{
@@ -329,7 +459,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Not.Contain("Sourced from outside"));
 	}
@@ -362,7 +492,7 @@ public class MarkdownReportRendererIntegrationTests
 			ProjFiles = [new FileInfo(packageJsonPath)],
 		};
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.StartWith("# bookwings - App Project"));
 	}
@@ -373,7 +503,7 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false, includeScript: true);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		using (Assert.EnterMultipleScope())
 		{
@@ -390,8 +520,37 @@ public class MarkdownReportRendererIntegrationTests
 		using var temp = new TempProjectDirectory();
 		var request = BuildRequest(temp, isSolution: false);
 
-		var (output, _) = MarkdownReportRenderer.Render(request);
+		string output = Render(request).Markdown;
 
 		Assert.That(output, Does.Not.Contain("## Scripts"));
+	}
+	[Test]
+	public void Render_IncludeStatsOn_ExcludesPreambleFromStatistics()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, slim: true, includeStats: true);
+
+		var sectionNames = Render(request).Statistics.Sections.Select(section => section.SectionName).ToList();
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(sectionNames, Does.Not.Contain(ReportSectionNames.Flags));
+			Assert.That(sectionNames, Does.Not.Contain(ReportSectionNames.TokenStatistics));
+		}
+	}
+
+	[Test]
+	public void Render_IncludeStatsOn_ExposesPreambleAndContentSectionsSeparately()
+	{
+		using var temp = new TempProjectDirectory();
+		var request = BuildRequest(temp, isSolution: false, includeStats: true);
+
+		var report = Render(request);
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(report.PreambleSections.Select(section => section.Name), Is.EqualTo(new[] { ReportSectionNames.Flags, ReportSectionNames.TokenStatistics }));
+			Assert.That(report.ContentSections.Select(section => section.Name), Does.Contain(ReportSectionNames.AppCode));
+		}
 	}
 }

@@ -30,13 +30,12 @@ public class ProgramPromptForOptionsTests
     [TestCase("MyApp.slnx")]
     public void PromptForOptions_SolutionInput_SkipsModeQuestion(string solutionPath)
     {
-        // An 8th line is queued so that, if the mode question were still
-        // (incorrectly) asked, it would consume this value instead of being
-        // skipped. Console.ReadLine() returns null (not an exception) once
-        // input is exhausted, and Prompt() treats that as blank - so with
-        // too few lines this test would pass even if the skip were broken.
-        // The sentinel makes the assertion a real one.
-        using var input = new ConsoleInputScope(
+		// A spare line is queued after type. If the mode question were (incorrectly)
+		// asked, it would consume this sentinel and ModeArg would be non-null. When mode
+		// is skipped, the token-stats question consumes it instead, which reads as "none".
+		// Console.ReadLine() returns null (not an exception) once input runs out, so
+		// without the sentinel this test would pass even if the skip were broken.
+		using var input = new ConsoleInputScope(
             solutionPath,
             "",                     // output
             "n",                    // slim
@@ -102,5 +101,33 @@ public class ProgramPromptForOptionsTests
 		var options = Program.PromptForOptions();
 
 		Assert.That(options!.SearchReadme, Is.True);
+	}
+
+	[TestCase("report", true, false)]
+	[TestCase("REPORT", true, false)]
+	[TestCase("console", false, true)]
+	[TestCase("", false, false)]
+	[TestCase("nonsense", false, false)]
+	public void PromptForOptions_StatsAnswer_SetsMatchingFlags(string statsAnswer, bool expectedIncludeStats, bool expectedStatsOnly)
+	{
+		using var input = new ConsoleInputScope(
+			"MyApp.csproj", // path
+			"",             // output
+			"n",            // slim
+			"n",            // exclude-tests
+			"n",            // find-readme
+			"",             // scope
+			"",             // exclude-dirs
+			"",             // type
+			"",             // mode
+			statsAnswer);   // token stats
+
+		var options = Program.PromptForOptions();
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(options!.IncludeStats, Is.EqualTo(expectedIncludeStats));
+			Assert.That(options.StatsOnly, Is.EqualTo(expectedStatsOnly));
+		}
 	}
 }

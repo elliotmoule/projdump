@@ -80,4 +80,12 @@ public class SavedCommandTests
 
 		Assert.That(original.HasSameOptions(original with { SearchReadme = !original.SearchReadme }), Is.False);
 	}
+
+	[Test]
+	public void HasSameOptions_IncludeStatsDiffers_ReturnsFalse()
+	{
+		var original = MakeCommand();
+
+		Assert.That(original.HasSameOptions(original with { IncludeStats = !original.IncludeStats }), Is.False);
+	}
 }

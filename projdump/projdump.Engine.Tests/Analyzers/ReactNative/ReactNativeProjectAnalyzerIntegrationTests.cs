@@ -5,6 +5,7 @@ using projdump.Engine.Tests.TestSupport;
 namespace projdump.Engine.Tests.Analyzers.ReactNative;
 
 [TestFixture]
+[Category("Integration")]
 public class ReactNativeProjectAnalyzerIntegrationTests
 {
 	const string ReactNativePackageJson = """

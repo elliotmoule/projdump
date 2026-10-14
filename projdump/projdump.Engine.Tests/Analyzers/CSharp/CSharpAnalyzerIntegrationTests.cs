@@ -5,6 +5,7 @@ using projdump.Engine.Tests.TestSupport;
 namespace projdump.Engine.Tests.Analyzers.CSharp;
 
 [TestFixture]
+[Category("Integration")]
 public class CSharpAnalyzerIntegrationTests
 {
     static string BuildBasicProject(TempProjectDirectory temp)

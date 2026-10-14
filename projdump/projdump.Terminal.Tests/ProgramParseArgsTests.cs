@@ -1,4 +1,6 @@
-﻿namespace projdump.Terminal.Tests;
+﻿using projdump.Terminal.Tests.TestSupport;
+
+namespace projdump.Terminal.Tests;
 
 [TestFixture]
 public class ProgramParseArgsTests
@@ -175,5 +177,56 @@ public class ProgramParseArgsTests
 		var options = Program.ParseArgs(["MyApp.sln"]);
 
 		Assert.That(options!.SearchReadme, Is.False);
+	}
+
+	[Test]
+	public void ParseArgs_IncludeStatsFlag_SetsIncludeStats()
+	{
+		var options = Program.ParseArgs(["MyApp.sln", "--include-stats"]);
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(options!.IncludeStats, Is.True);
+			Assert.That(options.StatsOnly, Is.False);
+		}
+	}
+
+	[Test]
+	public void ParseArgs_StatsFlag_SetsStatsOnly()
+	{
+		var options = Program.ParseArgs(["MyApp.sln", "--stats"]);
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(options!.StatsOnly, Is.True);
+			Assert.That(options.IncludeStats, Is.False);
+		}
+	}
+
+	[Test]
+	public void ParseArgs_NoStatsFlags_LeavesBothOff()
+	{
+		var options = Program.ParseArgs(["MyApp.sln"]);
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(options!.IncludeStats, Is.False);
+			Assert.That(options.StatsOnly, Is.False);
+		}
+	}
+
+	[Test]
+	public void ParseArgs_BothStatsFlags_KeepsStatsOnlyAndPrintsNote()
+	{
+		using var console = new ConsoleCapture();
+
+		var options = Program.ParseArgs(["MyApp.sln", "--include-stats", "--stats"]);
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(options!.StatsOnly, Is.True);
+			Assert.That(options.IncludeStats, Is.False);
+			Assert.That(console.Output, Does.Contain("--include-stats is ignored"));
+		}
 	}
 }

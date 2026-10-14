@@ -5,6 +5,7 @@ using projdump.Engine.Tests.TestSupport;
 namespace projdump.Engine.Tests.Analyzers.Vue;
 
 [TestFixture]
+[Category("Integration")]
 public class VueProjectAnalyzerIntegrationTests
 {
     const string VuePackageJson = """{ "name": "my-vue-app", "dependencies": { "vue": "^3.4.0" } }""";

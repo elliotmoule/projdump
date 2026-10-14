@@ -15,7 +15,9 @@ class Program
 		string? TypeArg,
 		string? ModeArg,
 		IReadOnlyList<string> ExcludeDirs,
-		bool SearchReadme = false);
+		bool SearchReadme = false,
+		bool IncludeStats = false,
+		bool StatsOnly = false);
 
 	internal enum RecentMenuAction { RunSelected, EnterNewCommand, Quit }
 
@@ -55,6 +57,8 @@ class Program
 		Console.WriteLine("  --scope <dir>      Restrict to a subdirectory (relative to project root)");
 		Console.WriteLine("  --exclude-dir <name>      Exclude a directory by name, anywhere in the tree (repeatable)");
 		Console.WriteLine("  --find-readme      Look in parent directories for a README when the project has none");
+		Console.WriteLine("  --include-stats    Add a token statistics block to the report");
+		Console.WriteLine("  --stats            Print token statistics to the console; no report is written");
 		Console.WriteLine($"  --type <{string.Join("|", Registry.TypeKeys)}>   Force project type (auto-detected by default)");
 		Console.WriteLine("  --mode <default|webapi>   Report focus mode (default: full dump)");
 		Console.WriteLine("  --help, -h         Show this help");
@@ -66,6 +70,7 @@ class Program
 		Console.WriteLine("  projdump MyApp.sln");
 		Console.WriteLine("  projdump MyApp.sln output/context.md --slim");
 		Console.WriteLine("  projdump MyApp.sln --exclude-tests --scope src/MyApp.Api");
+		Console.WriteLine("  projdump MyApp.sln --stats");
 		Console.WriteLine("  projdump MyApp.Api.csproj --mode webapi");
 		Console.WriteLine("  projdump MyApp.Api.csproj --mode webapi --exclude-dir wwwroot");
 		Console.WriteLine("  projdump ./frontend");
@@ -77,6 +82,13 @@ class Program
 	{
 		Console.ForegroundColor = ConsoleColor.Red;
 		Console.WriteLine($"Error: {message}");
+		Console.ResetColor();
+	}
+
+	static void PrintNote(string message)
+	{
+		Console.ForegroundColor = ConsoleColor.Yellow;
+		Console.WriteLine($"Note: {message}");
 		Console.ResetColor();
 	}
 
@@ -123,6 +135,8 @@ class Program
 		bool slim = false;
 		bool excludeTests = false;
 		bool searchReadme = false;
+		bool includeStats = false;
+		bool statsOnly = false;
 		string? scopeDir = null;
 		string? typeArg = null;
 		string? modeArg = null;
@@ -142,6 +156,12 @@ class Program
 					break;
 				case "--find-readme":
 					searchReadme = true;
+					break;
+				case "--include-stats":
+					includeStats = true;
+					break;
+				case "--stats":
+					statsOnly = true;
 					break;
 				case "--scope":
 					if (i + 1 >= args.Length) { PrintError("--scope requires a directory argument."); return null; }
@@ -175,6 +195,12 @@ class Program
 			return null;
 		}
 
+		if (statsOnly && includeStats)
+		{
+			PrintNote("--stats writes no report, so --include-stats is ignored.");
+			includeStats = false;
+		}
+
 		return new RunOptions(
 			InputPath: positional[0],
 			CustomOutputPath: positional.Count > 1 ? positional[1] : null,
@@ -184,7 +210,9 @@ class Program
 			TypeArg: typeArg,
 			ModeArg: modeArg,
 			ExcludeDirs: excludeDirs,
-			SearchReadme: searchReadme);
+			SearchReadme: searchReadme,
+			IncludeStats: includeStats,
+			StatsOnly: statsOnly);
 	}
 
 	/// <summary>
@@ -257,6 +285,7 @@ class Program
 		if (command.Slim) flags.Add("--slim");
 		if (command.ExcludeTests) flags.Add("--exclude-tests");
 		if (command.SearchReadme) flags.Add("--find-readme");
+		if (command.IncludeStats) flags.Add("--include-stats");
 		if (command.ScopeDir != null) flags.Add($"--scope {command.ScopeDir}");
 		foreach (string excludedDir in command.ExcludeDirs) flags.Add($"--exclude-dir {excludedDir}");
 		if (command.TypeArg != null) flags.Add($"--type {command.TypeArg}");
@@ -290,7 +319,8 @@ class Program
 		cmd.TypeArg,
 		cmd.ModeArg,
 		cmd.ExcludeDirs,
-		cmd.SearchReadme);
+		cmd.SearchReadme,
+		cmd.IncludeStats);
 
 	/// <summary>
 	/// Promotes a command to the top of the recently used list, asking first only when it is
@@ -301,6 +331,10 @@ class Program
 	/// <param name="offerToSave">False when the command came straight from the recent list.</param>
 	internal static void RecordCommandUse(RunOptions options, ExecutionResult result, bool offerToSave)
 	{
+		// A --stats run is a sizing probe, not a dump worth repeating.
+		if (options.StatsOnly)
+			return;
+
 		SavedCommand command = ToSavedCommand(options, result.SolutionName, result.ProjectName);
 		bool alreadyInHistory = CommandHistoryStore.FindMatch(command, CommandHistoryFilePathOverride) != null;
 
@@ -322,7 +356,8 @@ class Program
 		options.ExcludeDirs,
 		solutionName,
 		projectName,
-		options.SearchReadme);
+		options.SearchReadme,
+		options.IncludeStats);
 
 	internal static RunOptions? PromptForOptions()
 	{
@@ -357,9 +392,14 @@ class Program
 			modeArg = OrNull(Prompt("Mode - default/webapi (blank = default): "));
 		}
 
+		// Asked after mode so the solution-input path keeps the same question order as before.
+		string statsChoice = Prompt("Token stats - none/report/console (blank = none): ");
+		bool includeStats = statsChoice.Equals("report", StringComparison.OrdinalIgnoreCase);
+		bool statsOnly = statsChoice.Equals("console", StringComparison.OrdinalIgnoreCase);
+
 		Console.WriteLine();
 
-		return new RunOptions(inputPath, customOutputPath, slim, excludeTests, scopeDir, typeArg, modeArg, excludeDirs, searchReadme);
+		return new RunOptions(inputPath, customOutputPath, slim, excludeTests, scopeDir, typeArg, modeArg, excludeDirs, searchReadme, includeStats, statsOnly);
 	}
 
 	static string Prompt(string label)
@@ -409,64 +449,87 @@ class Program
 			return ExecutionResult.Failed;
 		}
 
+		IReportRenderer renderer = ReportRendererFactory.Create();
+		RenderedReport report = renderer.Render(BuildRenderRequest(options, analysis));
+
+		if (options.StatsOnly)
+			StatisticsConsoleWriter.Write(analysis.ProjectName, report);
+		else
+			WriteReport(options, analysis, report);
+
+		var (solutionName, projectName) = ResolveDisplayNames(analysis);
+		return new ExecutionResult(true, solutionName, projectName);
+	}
+
+	static ReportRenderRequest BuildRenderRequest(RunOptions options, ProjectAnalysis analysis) => new()
+	{
+		ProjectName = analysis.ProjectName,
+		InputFileInfo = analysis.InputFileInfo,
+		RootDir = analysis.RootDir,
+		IsSolution = analysis.IsSolution,
+		Extension = analysis.Extension,
+		Slim = options.Slim,
+		ExcludeTests = options.ExcludeTests,
+		SearchForReadme = options.SearchReadme,
+		IncludeStats = options.IncludeStats,
+		ScopeDir = options.ScopeDir,
+		ExcludeDirs = options.ExcludeDirs,
+		AllFiles = [.. analysis.AllFiles.Select(e => e.File)],
+		CodeFiles = [.. analysis.CodeFiles.Select(e => e.File)],
+		ConfigFiles = [.. analysis.ConfigFiles.Select(e => e.File)],
+		ScriptFiles = [.. analysis.ScriptFiles.Select(e => e.File)],
+		SqlFiles = [.. analysis.SqlFiles.Select(e => e.File)],
+		ReadmeFiles = [.. analysis.ReadmeFiles.Select(e => e.File)],
+		ProjFiles = [.. analysis.ProjFiles.Select(e => e.File)],
+	};
+
+	/// <summary>
+	/// Works out where the report goes, creating the target directory for a custom path.
+	/// </summary>
+	/// <param name="options">The run options, for the custom output path and slim flag.</param>
+	/// <param name="analysis">The analysis, for the project name, kind and root.</param>
+	/// <returns>The full path the report will be written to.</returns>
+	static string ResolveOutputPath(RunOptions options, ProjectAnalysis analysis)
+	{
 		string modeSuffix = options.Slim ? "-slim" : "";
 		string projectKind = analysis.IsSolution ? "app-solution" : "app-project";
 		string outputFileName = $"{SanitizeForFileName(analysis.ProjectName)}-{projectKind}{modeSuffix}.md";
 
-		string outputPath;
-		if (options.CustomOutputPath != null)
-		{
-			bool looksLikeDir = string.IsNullOrEmpty(Path.GetExtension(options.CustomOutputPath))
-								|| options.CustomOutputPath.EndsWith(Path.DirectorySeparatorChar)
-								|| options.CustomOutputPath.EndsWith(Path.AltDirectorySeparatorChar);
+		if (options.CustomOutputPath == null)
+			return Path.Combine(ResolveDefaultOutputDirectory(analysis.RootDir), outputFileName);
 
-			outputPath = looksLikeDir
-				? Path.Combine(options.CustomOutputPath, outputFileName)
-				: options.CustomOutputPath;
+		bool looksLikeDir = string.IsNullOrEmpty(Path.GetExtension(options.CustomOutputPath))
+							|| options.CustomOutputPath.EndsWith(Path.DirectorySeparatorChar)
+							|| options.CustomOutputPath.EndsWith(Path.AltDirectorySeparatorChar);
 
-			string? outputDir = Path.GetDirectoryName(outputPath);
-			if (!string.IsNullOrEmpty(outputDir))
-				Directory.CreateDirectory(outputDir);
-		}
-		else
-		{
-			outputPath = Path.Combine(ResolveDefaultOutputDirectory(analysis.RootDir), outputFileName);
-		}
+		string outputPath = looksLikeDir
+			? Path.Combine(options.CustomOutputPath, outputFileName)
+			: options.CustomOutputPath;
 
-		var renderRequest = new ReportRenderRequest
-		{
-			ProjectName = analysis.ProjectName,
-			InputFileInfo = analysis.InputFileInfo,
-			RootDir = analysis.RootDir,
-			IsSolution = analysis.IsSolution,
-			Extension = analysis.Extension,
-			Slim = options.Slim,
-			ExcludeTests = options.ExcludeTests,
-			SearchForReadme = options.SearchReadme,
-			ScopeDir = options.ScopeDir,
-			ExcludeDirs = options.ExcludeDirs,
-			AllFiles = [.. analysis.AllFiles.Select(e => e.File)],
-			CodeFiles = [.. analysis.CodeFiles.Select(e => e.File)],
-			ConfigFiles = [.. analysis.ConfigFiles.Select(e => e.File)],
-			ScriptFiles = [.. analysis.ScriptFiles.Select(e => e.File)],
-			SqlFiles = [.. analysis.SqlFiles.Select(e => e.File)],
-			ReadmeFiles = [.. analysis.ReadmeFiles.Select(e => e.File)],
-			ProjFiles = [.. analysis.ProjFiles.Select(e => e.File)],
-		};
+		string? outputDir = Path.GetDirectoryName(outputPath);
+		if (!string.IsNullOrEmpty(outputDir))
+			Directory.CreateDirectory(outputDir);
 
-		var (output, estimatedTokens) = MarkdownReportRenderer.Render(renderRequest);
+		return outputPath;
+	}
 
-		File.WriteAllText(outputPath, output);
+	/// <summary>
+	/// Writes the report to disk and confirms where it went.
+	/// </summary>
+	/// <param name="options">The run options, for the output path and slim flag.</param>
+	/// <param name="analysis">The analysis the report was rendered from.</param>
+	/// <param name="report">The rendered report.</param>
+	static void WriteReport(RunOptions options, ProjectAnalysis analysis, RenderedReport report)
+	{
+		string outputPath = ResolveOutputPath(options, analysis);
+		File.WriteAllText(outputPath, report.Markdown);
 
 		Console.ForegroundColor = ConsoleColor.Green;
 		Console.WriteLine($"Success! Context generated at: {outputPath}");
-		Console.Write($"Estimated tokens: ~{estimatedTokens:N0}");
-		if (options.Slim) Console.Write("  (slim mode — run without --slim for full file contents)");
+		Console.Write($"Estimated tokens: ~{report.EstimatedTokens:N0}");
+		if (options.Slim) Console.Write("  (slim mode, run without --slim for full file contents)");
 		Console.WriteLine();
 		Console.ResetColor();
-
-		var (solutionName, projectName) = ResolveDisplayNames(analysis);
-		return new ExecutionResult(true, solutionName, projectName);
 	}
 
 	// Vue has no solution concept, so the folder holding package.json stands in for one.

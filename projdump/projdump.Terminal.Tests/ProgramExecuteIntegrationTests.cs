@@ -3,6 +3,7 @@
 namespace projdump.Terminal.Tests;
 
 [TestFixture]
+[Category("Integration")]
 public class ProgramExecuteIntegrationTests
 {
     [Test]
@@ -188,4 +189,59 @@ public class ProgramExecuteIntegrationTests
         Assert.That(content, Does.Not.Contain("site.js"));
         Assert.That(content, Does.Contain("`--exclude-dir wwwroot`"));
     }
+
+	[Test]
+	public void Execute_StatsOnly_WritesNoFileAndPrintsStatistics()
+	{
+		using var temp = new TempProjectDirectory();
+		using var outputScope = new DefaultOutputDirectoryOverrideScope(temp.RootPath);
+		string csprojPath = temp.WriteFile("MyApp.csproj", "<Project></Project>");
+		temp.WriteFile("Program.cs", "// entry");
+		var options = new Program.RunOptions(csprojPath, null, false, false, null, null, null, [], StatsOnly: true);
+
+		using var console = new ConsoleCapture();
+		var result = Program.Execute(options);
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(result.Success, Is.True);
+			Assert.That(Directory.GetFiles(temp.RootPath, "*.md"), Is.Empty);
+			Assert.That(console.Output, Does.Contain("Token statistics for MyApp"));
+			Assert.That(console.Output, Does.Contain("App Code"));
+		}
+	}
+
+	[Test]
+	public void Execute_StatsOnlyWithCustomOutputDirectory_DoesNotCreateTheDirectory()
+	{
+		using var temp = new TempProjectDirectory();
+		string csprojPath = temp.WriteFile("MyApp.csproj", "<Project></Project>");
+		temp.WriteFile("Program.cs", "// entry");
+		string customOutputDir = temp.GetFullPath("out") + Path.DirectorySeparatorChar;
+		var options = new Program.RunOptions(csprojPath, customOutputDir, false, false, null, null, null, [], StatsOnly: true);
+
+		using var console = new ConsoleCapture();
+		Program.Execute(options);
+
+		Assert.That(Directory.Exists(customOutputDir), Is.False);
+	}
+
+	[Test]
+	public void Execute_IncludeStats_WritesStatisticsBlockIntoReport()
+	{
+		using var temp = new TempProjectDirectory();
+		using var outputScope = new DefaultOutputDirectoryOverrideScope(temp.RootPath);
+		string csprojPath = temp.WriteFile("MyApp.csproj", "<Project></Project>");
+		temp.WriteFile("Program.cs", "// entry");
+		var options = new Program.RunOptions(csprojPath, null, false, false, null, null, null, [], IncludeStats: true);
+
+		Program.Execute(options);
+
+		string content = File.ReadAllText(temp.GetFullPath("MyApp-app-project.md"));
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(content, Does.Contain("## Token Statistics"));
+			Assert.That(content, Does.Contain("`--include-stats`"));
+		}
+	}
 }

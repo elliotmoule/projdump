@@ -1,20 +1,85 @@
 ﻿using System.Text;
-using projdump.Engine.Shared;
+using projdump.Engine.Measurement;
+using projdump.Engine.Rendering.Preamble;
+using projdump.Engine.Rendering.Sections;
+using projdump.Engine.Rendering.Statistics;
 
 namespace projdump.Engine.Rendering;
 
-public static class MarkdownReportRenderer
+// Built through ReportRendererFactory; the constructor is internal because the builder contracts are.
+public sealed class MarkdownReportRenderer : IReportRenderer
 {
+	readonly IReadOnlyList<IReportSectionBuilder> _contentBuilders;
+	readonly IReadOnlyList<IReportPreambleBuilder> _preambleBuilders;
+	readonly ReportStatisticsCalculator _statisticsCalculator;
+	readonly ITokenEstimator _tokenEstimator;
+
+	internal MarkdownReportRenderer(
+		ITokenEstimator tokenEstimator,
+		ReportStatisticsCalculator statisticsCalculator,
+		IReadOnlyList<IReportSectionBuilder> contentBuilders,
+		IReadOnlyList<IReportPreambleBuilder> preambleBuilders)
+	{
+		_tokenEstimator = tokenEstimator;
+		_statisticsCalculator = statisticsCalculator;
+		_contentBuilders = contentBuilders;
+		_preambleBuilders = preambleBuilders;
+	}
+
 	/// <summary>
-	/// Builds the full markdown report for an analysed project.
+	/// Runs each builder in order, keeping only the sections that have something to show.
+	/// </summary>
+	/// <typeparam name="TBuilder">The builder contract.</typeparam>
+	/// <param name="builders">Builders in report order.</param>
+	/// <param name="build">Invokes one builder.</param>
+	/// <returns>The non-null sections, in report order.</returns>
+	static List<ReportSection> BuildSections<TBuilder>(IEnumerable<TBuilder> builders, Func<TBuilder, ReportSection?> build) =>
+		[.. builders.Select(build).OfType<ReportSection>()];
+
+	/// <summary>
+	/// Builds the header line showing the report's estimated token count.
+	/// </summary>
+	/// <param name="estimatedTokens">The count to display.</param>
+	/// <returns>The line followed by a blank line.</returns>
+	string FormatTokenLine(int estimatedTokens) =>
+		$"> **Estimated tokens:** ~{estimatedTokens:N0}  _({_tokenEstimator.MethodDescription}, treat as a rough guide)_{Environment.NewLine}{Environment.NewLine}";
+
+	static string JoinMarkdown(IEnumerable<ReportSection> sections) =>
+		string.Concat(sections.Select(section => section.ToMarkdown()));
+
+	/// <summary>
+	/// Builds the full report: content first, then statistics, then the preamble and header.
 	/// </summary>
 	/// <param name="request">The files and flags to render.</param>
-	/// <returns>The markdown output and its rough token estimate.</returns>
-	public static (string Output, int EstimatedTokens) Render(ReportRenderRequest request)
+	/// <returns>The report, its estimated token count, statistics, and its sections.</returns>
+	public RenderedReport Render(ReportRenderRequest request)
+	{
+		var contentSections = BuildSections(_contentBuilders, builder => builder.Build(request));
+		ReportStatistics statistics = _statisticsCalculator.Calculate(contentSections);
+		var preambleSections = BuildSections(_preambleBuilders, builder => builder.Build(request, statistics));
+
+		string title = RenderTitle(request);
+		string preamble = JoinMarkdown(preambleSections);
+		string body = JoinMarkdown(contentSections);
+
+		// Header is assembled last rather than patched with Replace, which also rewrote matching text inside dumped files.
+		// The token line's own cost is added after measuring everything else.
+		int tokensWithoutTokenLine = _tokenEstimator.EstimateTokens(title) + _tokenEstimator.EstimateTokens(preamble) + _tokenEstimator.EstimateTokens(body);
+		int estimatedTokens = tokensWithoutTokenLine + _tokenEstimator.EstimateTokens(FormatTokenLine(tokensWithoutTokenLine));
+
+		string markdown = string.Concat(title, FormatTokenLine(estimatedTokens), preamble, body);
+		return new RenderedReport(markdown, estimatedTokens, statistics, preambleSections, contentSections);
+	}
+
+	/// <summary>
+	/// Builds the report title, plus the slim-mode note when relevant.
+	/// </summary>
+	/// <param name="request">The render request.</param>
+	/// <returns>The title block, ending with a blank line.</returns>
+	static string RenderTitle(ReportRenderRequest request)
 	{
 		StringBuilder sb = new();
 
-		// Header
 		string modeLabel = request.Slim ? " (slim)" : "";
 		sb.AppendLine($"# {request.ProjectName} - {(request.IsSolution ? "App Solution" : "App Project")}{modeLabel}");
 		sb.AppendLine();
@@ -25,173 +90,6 @@ public static class MarkdownReportRenderer
 			sb.AppendLine();
 		}
 
-		// Token estimate placeholder - filled in at the end
-		const string tokenPlaceholderLine = "> **Estimated tokens:** ~71,041  _(character count ÷ 4 — treat as a rough guide)_";
-		sb.AppendLine(tokenPlaceholderLine);
-		sb.AppendLine();
-
-		// Active flags note
-		var activeFlags = new List<string>();
-		if (request.Slim) activeFlags.Add("`--slim`");
-		if (request.ExcludeTests) activeFlags.Add("`--exclude-tests`");
-		if (request.SearchForReadme) activeFlags.Add("`--find-readme`");
-		if (request.ScopeDir != null) activeFlags.Add($"`--scope {request.ScopeDir}`");
-		foreach (var dir in request.ExcludeDirs) activeFlags.Add($"`--exclude-dir {dir}`");
-		if (activeFlags.Count > 0)
-		{
-			sb.AppendLine($"> **Flags:** {string.Join(", ", activeFlags)}");
-			sb.AppendLine();
-		}
-
-		// File Summary Table
-		sb.AppendLine("## Project Summary");
-		var stats = request.AllFiles
-			.GroupBy(f => f.Extension.ToLower())
-			.Select(g => new { Ext = string.IsNullOrEmpty(g.Key) ? "No Ext" : g.Key, Count = g.Count() })
-			.OrderByDescending(x => x.Count);
-
-		sb.AppendLine("| File Extension | Count |");
-		sb.AppendLine("| :--- | :--- |");
-		foreach (var stat in stats)
-			sb.AppendLine($"| {stat.Ext} | {stat.Count} |");
-		sb.AppendLine();
-
-		// File Structure
-		sb.AppendLine("## Project Structure");
-		sb.AppendLine("```text");
-		foreach (var file in request.AllFiles)
-			sb.AppendLine(Path.GetRelativePath(request.RootDir.FullName, file.FullName));
-		sb.AppendLine("```");
-		sb.AppendLine();
-
-		// README / Documentation
-		if (request.ReadmeFiles.Count > 0)
-		{
-			sb.AppendLine("## Documentation");
-			foreach (var file in request.ReadmeFiles)
-			{
-				string relativePath = Path.GetRelativePath(request.RootDir.FullName, file.FullName);
-
-				// A relative path that climbs out of the root means the file was pulled in from
-				// an ancestor directory, so it isn't part of the project's own file listing.
-				bool isOutsideProject = relativePath.StartsWith("..", StringComparison.Ordinal);
-
-				sb.AppendLine($"### {file.Name}");
-				sb.AppendLine($"**Path:** `{(isOutsideProject ? file.FullName : relativePath)}`");
-				sb.AppendLine();
-
-				if (isOutsideProject)
-				{
-					sb.AppendLine("> **Sourced from outside the project tree.** Found by searching parent directories for a README; it is not included in the file listing or extension counts above.");
-					sb.AppendLine();
-				}
-
-				if (request.Slim)
-					sb.AppendLine($"_File size: {FormatHelpers.FormatFileSize(file.Length)}_");
-				else
-					sb.AppendLine(File.ReadAllText(file.FullName).Trim());
-
-				sb.AppendLine();
-			}
-		}
-
-		// Solution Configuration
-		if (request.IsSolution)
-		{
-			sb.AppendLine("## Solution Configuration");
-			string slnLang = request.Extension == ".slnx" ? "xml" : "text";
-			sb.AppendLine($"### {request.InputFileInfo.Name}");
-			sb.AppendLine($"**Path:** `{request.InputFileInfo.Name}`");
-			sb.AppendLine();
-			if (request.Slim)
-			{
-				sb.AppendLine($"_File size: {FormatHelpers.FormatFileSize(request.InputFileInfo.Length)}_");
-			}
-			else
-			{
-				sb.AppendLine($"```{slnLang}");
-				sb.AppendLine(File.ReadAllText(request.InputFileInfo.FullName).Trim());
-				sb.AppendLine("```");
-			}
-			sb.AppendLine();
-		}
-
-		// Project Dependencies
-		sb.AppendLine("## Project Dependencies");
-		foreach (var proj in request.ProjFiles)
-		{
-			string relativePath = Path.GetRelativePath(request.RootDir.FullName, proj.FullName);
-			sb.AppendLine($"### {proj.Name}");
-			sb.AppendLine($"**Path:** `{relativePath}`");
-			sb.AppendLine();
-			if (request.Slim)
-			{
-				sb.AppendLine($"_File size: {FormatHelpers.FormatFileSize(proj.Length)}_");
-			}
-			else
-			{
-				sb.AppendLine("```xml");
-				sb.AppendLine(File.ReadAllText(proj.FullName).Trim());
-				sb.AppendLine("```");
-			}
-		}
-		sb.AppendLine();
-
-		if (request.ConfigFiles.Count > 0)
-			AppendFileSection(sb, "## Configuration", request.ConfigFiles, request);
-
-		// Scripts sit between config and code: how the project is built, run, and deployed
-		// is usually more valuable context than any single source file.
-		if (request.ScriptFiles.Count > 0)
-			AppendFileSection(sb, "## Scripts", request.ScriptFiles, request);
-
-		// Database Scripts
-		if (request.SqlFiles.Count > 0)
-			AppendFileSection(sb, "## Database", request.SqlFiles, request);
-
-		AppendFileSection(sb, "## App Code", request.CodeFiles, request);
-
-		// Token estimate (Rough heuristic: GPT/Claude tokenisers average ~4 chars per token for code)
-		string output = sb.ToString();
-		int estimatedTokens = (int)Math.Ceiling(output.Length / 4.0);
-		string tokenLine = $"> **Estimated tokens:** ~{estimatedTokens:N0}  _(character count ÷ 4 — treat as a rough guide)_";
-		output = output.Replace(tokenPlaceholderLine, tokenLine);
-
-		return (output, estimatedTokens);
-	}
-
-	/// <summary>
-	/// Writes a heading followed by one entry per file, honouring slim mode.
-	/// </summary>
-	/// <param name="sb">The report being built.</param>
-	/// <param name="heading">The markdown heading line, including its hashes.</param>
-	/// <param name="files">Files to render, in the order they should appear.</param>
-	/// <param name="request">The render request, for the root path and slim flag.</param>
-	static void AppendFileSection(StringBuilder sb, string heading, IReadOnlyList<FileInfo> files, ReportRenderRequest request)
-	{
-		sb.AppendLine(heading);
-		sb.AppendLine();
-
-		foreach (var file in files)
-		{
-			string relativePath = Path.GetRelativePath(request.RootDir.FullName, file.FullName);
-			sb.AppendLine($"### {file.Name}");
-			sb.AppendLine($"**Path:** `{relativePath}`");
-			sb.AppendLine();
-
-			if (request.Slim)
-			{
-				sb.AppendLine($"_File size: {FormatHelpers.FormatFileSize(file.Length)}_");
-			}
-			else
-			{
-				string lang = FormatHelpers.GetMarkdownLanguage(file.Extension);
-				sb.AppendLine($"```{lang}");
-				sb.AppendLine(File.ReadAllText(file.FullName).Trim());
-				sb.AppendLine("```");
-			}
-
-			sb.AppendLine();
-		}
+		return sb.ToString();
 	}
 }

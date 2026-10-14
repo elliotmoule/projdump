@@ -218,4 +218,48 @@ public class CommandHistoryStoreTests
 		Assert.That(path, Does.Contain("projdump"));
 		Assert.That(path, Does.EndWith("command-history.json"));
 	}
+
+	[Test]
+	public void RecordUseThenLoad_IncludeStatsSet_RoundTrips()
+	{
+		using var temp = new TempJsonFile();
+
+		CommandHistoryStore.RecordUse(MakeCommand() with { IncludeStats = true }, temp.FilePath);
+
+		Assert.That(CommandHistoryStore.Load(temp.FilePath).Single().IncludeStats, Is.True);
+	}
+
+	[Test]
+	public void Load_LegacyEntryWithoutIncludeStats_DefaultsToFalse()
+	{
+		using var temp = new TempJsonFile();
+		Directory.CreateDirectory(Path.GetDirectoryName(temp.FilePath)!);
+		// Written before IncludeStats existed; the optional constructor parameter supplies the default.
+		File.WriteAllText(temp.FilePath, """
+            [
+              {
+                "SavedAt": "2026-01-15T09:30:00+00:00",
+                "InputPath": "Legacy.sln",
+                "CustomOutputPath": null,
+                "Slim": false,
+                "ExcludeTests": false,
+                "ScopeDir": null,
+                "TypeArg": null,
+                "ModeArg": null,
+                "ExcludeDirs": [],
+                "SolutionName": "Legacy",
+                "ProjectName": null,
+                "SearchReadme": true
+              }
+            ]
+            """);
+
+		var history = CommandHistoryStore.Load(temp.FilePath);
+
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(history.Single().IncludeStats, Is.False);
+			Assert.That(history.Single().SearchReadme, Is.True);
+		}
+	}
 }

@@ -246,4 +246,44 @@ public class ProgramSavedCommandTests
 			Assert.That(saved.ProjectName, Is.EqualTo("MyApp.Api"));
 		}
 	}
+
+	[Test]
+	public void RecordCommandUse_StatsOnlyRun_DoesNotWriteHistory()
+	{
+		using var temp = new TempProjectDirectory();
+		string historyPath = temp.GetFullPath("history.json");
+		using var scope = new CommandHistoryFilePathOverrideScope(historyPath);
+
+		// "y" is queued so a save prompt, if wrongly shown, would accept and write the file.
+		using var input = new ConsoleInputScope("y");
+		Program.RecordCommandUse(MakeOptions() with { StatsOnly = true }, Succeeded(), offerToSave: true);
+
+		Assert.That(File.Exists(historyPath), Is.False);
+	}
+
+	[Test]
+	public void ToSavedCommand_ThenToRunOptions_PreservesIncludeStats()
+	{
+		var original = MakeOptions() with { IncludeStats = true };
+
+		var roundTripped = Program.ToRunOptions(Program.ToSavedCommand(original));
+
+		Assert.That(roundTripped.IncludeStats, Is.True);
+	}
+
+	[Test]
+	public void ShowRecentCommands_IncludeStatsCommand_ShowsTheFlag()
+	{
+		using var temp = new TempProjectDirectory();
+		string historyPath = temp.GetFullPath("history.json");
+		using var scope = new CommandHistoryFilePathOverrideScope(historyPath);
+		CommandHistoryStore.RecordUse(MakeSavedCommand("MyApp.sln") with { IncludeStats = true }, historyPath);
+
+		using var input = new ConsoleInputScope("q");
+		using var console = new ConsoleCapture();
+
+		Program.ShowRecentCommands();
+
+		Assert.That(console.Output, Does.Contain("--include-stats"));
+	}
 }
